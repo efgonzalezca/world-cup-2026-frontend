@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+/*
+ * FIFA World Cup 2026 — Light Leaderboard Theme
+ * Minimal, clean, white cards on neutral gray background
+ * Inspired by FIFA.com leaderboard aesthetic
+ */
+:root {
+  /* ── Backgrounds ── */
+  --color-bg: #F8FAFC;
+  --color-card: #FFFFFF;
+  --color-card-alt: #F1F5F9;
+  --color-input-bg: #F8FAFC;
+
+  /* ── Brand (FIFA official palette) ── */
+  --color-primary: #00173A;
+  --color-primary-dark: #000E24;
+  --color-fifa-blue: #017CFC;
+  --color-fifa-blue-hover: #0066D6;
+  --color-fifa-blue-light: rgba(1, 124, 252, 0.08);
+  --color-fifa-teal: #2DE2B1;
+  --color-fifa-teal-dark: #1BC89A;
+  --color-fifa-magenta: #E4007C;
+  --color-fifa-gradient: linear-gradient(135deg, #00173A 0%, #002855 50%, #00173A 100%);
+
+  /* ── Text ── */
+  --color-text: #00173A;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94A3B8;
+  --color-text-light: #CBD5E1;
+
+  /* ── Borders ── */
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
+  --color-border-focus: #017CFC;
+
+  /* ── Medals ── */
+  --color-gold: #F59E0B;
+  --color-gold-bg: #FFFBEB;
+  --color-silver: #94A3B8;
+  --color-silver-bg: #F8FAFC;
+  --color-bronze: #D97706;
+  --color-bronze-bg: #FFF7ED;
+
+  /* ── Semantic ── */
+  --color-success: #16A34A;
+  --color-success-bg: #F0FDF4;
+  --color-error: #DC2626;
+  --color-error-bg: #FEF2F2;
+  --color-warning: #F59E0B;
+
+  /* ── Radius ── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+input, select, button {
+  font-family: inherit;
+}
+
+/* ── Focus ring ── */
+*:focus-visible {
+  outline: 2px solid var(--color-fifa-blue);
+  outline-offset: 2px;
+}
+
+/* ── Transitions ── */
+button, a, input, select {
+  transition: all 0.15s ease;
+}
+
+/* ── Hide number input spinners ── */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* ── Scrollbar (subtle) ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* ── Live match pulse ── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.3); }
+}
+
+/* ── Badge glow for live state ── */
+@keyframes badgePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.3); }
+  50% { box-shadow: 0 0 12px 4px rgba(245,158,11,0.15); }
+}
+
+/* ── Podium pillar desktop sizing ── */
+@media (min-width: 768px) {
+  .podium-pillar {
+    height: var(--desktop-h) !important;
+  }
+}
