@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState, useRef, useCallback, memo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { getRankingApi } from '../../api/users';
 import { getMatchesApi } from '../../api/matches';
 import { useSocket } from '../../hooks/useSocket';
+import { useAuth } from '../../context/AuthContext';
 import { FiTrendingUp, FiCheckCircle, FiActivity } from 'react-icons/fi';
 
 const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
@@ -48,9 +49,89 @@ function Avatar({ nickname, image, size = 34, color = 'var(--color-fifa-blue)', 
 
 const MEDAL_EMOJI: Record<number, string> = { 0: '\uD83E\uDD47', 1: '\uD83E\uDD48', 2: '\uD83E\uDD49' };
 
+interface RankingEntry {
+  id: string;
+  nickname: string;
+  score: number;
+  podium_score: number;
+  total_score: number;
+  profile_image?: string | null;
+}
+
+const RankingRow = memo(function RankingRow({ entry, index, isCurrentUser }: {
+  entry: RankingEntry; index: number; isCurrentUser: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center"
+      style={{
+        padding: '10px 16px',
+        background: isCurrentUser
+          ? 'rgba(1,124,252,0.08)'
+          : index < 3
+            ? index === 0 ? 'rgba(245,158,11,0.04)' : index === 1 ? 'rgba(148,163,184,0.04)' : 'rgba(217,119,6,0.04)'
+            : index % 2 === 0 ? 'transparent' : 'var(--color-bg)',
+        borderLeft: isCurrentUser ? '3px solid var(--color-fifa-blue)' : '3px solid transparent',
+      }}
+    >
+      {/* Position */}
+      <div style={{ width: 32, flexShrink: 0, textAlign: 'center' }}>
+        {index < 3 ? (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 24, height: 24, borderRadius: '50%', fontSize: 11, fontWeight: 700,
+            background: index === 0 ? 'var(--color-gold-bg)' : index === 1 ? 'var(--color-silver-bg)' : 'var(--color-bronze-bg)',
+            color: index === 0 ? 'var(--color-gold)' : index === 1 ? 'var(--color-silver)' : 'var(--color-bronze)',
+          }}>
+            {index + 1}
+          </span>
+        ) : (
+          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{index + 1}</span>
+        )}
+      </div>
+
+      {/* Avatar + Name */}
+      <div className="flex items-center" style={{ flex: 1, gap: 8, paddingLeft: 8, minWidth: 0 }}>
+        <Avatar nickname={entry.nickname} image={entry.profile_image} size={30} />
+        <span style={{
+          fontSize: 13, fontWeight: isCurrentUser ? 800 : index < 3 ? 700 : 600,
+          color: isCurrentUser ? 'var(--color-fifa-blue)' : 'var(--color-text)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {entry.nickname}
+          {isCurrentUser && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>(Tú)</span>}
+        </span>
+      </div>
+
+      {/* Points columns */}
+      <div style={{
+        width: 52, textAlign: 'center', fontSize: 13, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+        color: 'var(--color-text-secondary)',
+      }}>
+        {entry.score}
+      </div>
+      <div style={{
+        width: 52, textAlign: 'center', fontSize: 13, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+        color: entry.podium_score > 0 ? 'var(--color-fifa-magenta)' : 'var(--color-text-muted)',
+        fontWeight: entry.podium_score > 0 ? 700 : 400,
+      }}>
+        {entry.podium_score}
+      </div>
+      <div style={{
+        width: 56, textAlign: 'center', fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+        color: index === 0 ? 'var(--color-gold)' : index === 1 ? 'var(--color-silver)' : index === 2 ? 'var(--color-bronze)' : 'var(--color-fifa-blue)',
+      }}>
+        {entry.total_score}
+      </div>
+    </div>
+  );
+});
+
 export default function RankingTable() {
-  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [tick, setTick] = useState(0);
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [showStickyBar, setShowStickyBar] = useState(false);
 
   const { data: ranking, refetch } = useQuery({
     queryKey: ['ranking'],
@@ -63,14 +144,12 @@ export default function RankingTable() {
     staleTime: 30_000,
   });
 
-  // Listen for match results (finished) and score updates
   useSocket({
     'ranking.updated': () => refetch(),
     'score.updated': () => { refetch(); refetchMatches(); },
     'match.result': () => { refetchMatches(); refetch(); },
   });
 
-  // Timer: schedule a tick when the next match is about to go live
   const nextKickoff = useMemo(() => {
     if (!allMatches?.length) return null;
     const now = Date.now();
@@ -82,9 +161,8 @@ export default function RankingTable() {
 
   useEffect(() => {
     if (!nextKickoff) return;
-    const delay = nextKickoff - Date.now() + 1000; // +1s buffer
+    const delay = nextKickoff - Date.now() + 1000;
     if (delay <= 0) { setTick((t) => t + 1); return; }
-    // Cap at 2^31-1 ms for setTimeout safety
     const safeDelay = Math.min(delay, 2_147_483_647);
     const timer = setTimeout(() => {
       setTick((t) => t + 1);
@@ -92,6 +170,33 @@ export default function RankingTable() {
     }, safeDelay);
     return () => clearTimeout(timer);
   }, [nextKickoff, refetchMatches]);
+
+  // Find current user's position
+  const currentUserIndex = useMemo(
+    () => ranking?.findIndex((e) => e.id === user?.id) ?? -1,
+    [ranking, user?.id],
+  );
+  const currentUserEntry = currentUserIndex >= 0 ? ranking![currentUserIndex] : null;
+
+  // Detect if user row is visible in the table
+  const userRowRef = useRef<HTMLDivElement>(null);
+
+  const checkVisibility = useCallback(() => {
+    if (!userRowRef.current || !tableRef.current) {
+      setShowStickyBar(currentUserIndex > 5);
+      return;
+    }
+    const tableRect = tableRef.current.getBoundingClientRect();
+    const rowRect = userRowRef.current.getBoundingClientRect();
+    const isVisible = rowRect.top >= tableRect.top - 10 && rowRect.bottom <= window.innerHeight + 10;
+    setShowStickyBar(!isVisible);
+  }, [currentUserIndex]);
+
+  useEffect(() => {
+    checkVisibility();
+    window.addEventListener('scroll', checkVisibility, { passive: true });
+    return () => window.removeEventListener('scroll', checkVisibility);
+  }, [checkVisibility]);
 
   const tournamentState = getTournamentState(allMatches || []);
   const badge = STATE_BADGE[tournamentState];
@@ -109,7 +214,7 @@ export default function RankingTable() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      {/* ═══ HEADER ═══ */}
+      {/* HEADER */}
       <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
         <div>
           <h2 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Clasificación</h2>
@@ -136,12 +241,10 @@ export default function RankingTable() {
         </div>
       </div>
 
-      {/* ═══ PODIUM — Desktop: enhanced, Mobile: compact ═══ */}
+      {/* PODIUM */}
       {top3.length >= 3 && (
         <div style={{
-          background: isFinished
-            ? 'var(--color-fifa-gradient)'
-            : 'var(--color-card)',
+          background: isFinished ? 'var(--color-fifa-gradient)' : 'var(--color-card)',
           borderRadius: 'var(--radius-lg)',
           boxShadow: isFinished ? 'var(--shadow-lg)' : 'var(--shadow-sm)',
           border: isFinished ? 'none' : '1px solid var(--color-border-light)',
@@ -150,11 +253,8 @@ export default function RankingTable() {
           position: 'relative',
           overflow: 'hidden',
         }}>
-          {/* Trophy title for finished state */}
           {isFinished && (
-            <div style={{
-              textAlign: 'center', marginBottom: 20,
-            }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
               <div style={{ fontSize: 28, lineHeight: 1 }}>{'\uD83C\uDFC6'}</div>
               <div style={{
                 fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
@@ -170,6 +270,7 @@ export default function RankingTable() {
               const entry = top3[index];
               if (!entry) return null;
               const isChamp = index === 0;
+              const isCurrent = entry.id === user?.id;
               const textColor = isFinished ? '#fff' : 'var(--color-text)';
               const scoreColor = isFinished ? 'var(--color-fifa-teal)' : color;
               const pillarBg = isFinished ? `${color}30` : bg;
@@ -177,7 +278,6 @@ export default function RankingTable() {
 
               return (
                 <div key={entry.id} className="flex flex-col items-center" style={{ order, flex: 1, minWidth: 0, maxWidth: 160 }}>
-                  {/* Medal emoji */}
                   <div style={{ fontSize: isChamp ? 24 : 18, lineHeight: 1, marginBottom: 4 }}>
                     {MEDAL_EMOJI[index]}
                   </div>
@@ -199,33 +299,32 @@ export default function RankingTable() {
                     )}
                   </div>
                   <div style={{
-                    fontSize: 12, fontWeight: 700, color: textColor,
+                    fontSize: 12, fontWeight: isCurrent ? 800 : 700,
+                    color: isCurrent && !isFinished ? 'var(--color-fifa-blue)' : textColor,
                     marginTop: 6, marginBottom: 2,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     maxWidth: '100%', textAlign: 'center',
                   }}>
                     {entry.nickname}
+                    {isCurrent && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>(Tú)</span>}
                   </div>
                   <div style={{ fontSize: 18, fontWeight: 900, color: scoreColor, marginBottom: 8, fontVariantNumeric: 'tabular-nums' }}>
                     {entry.total_score}
                     <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 2, opacity: 0.7 }}>pts</span>
                   </div>
-                  {/* Podium pillar — taller on desktop */}
                   <div className="podium-pillar" style={{
                     width: '100%',
-                    // Mobile height via inline, desktop override via CSS class
                     height,
                     background: pillarBg, borderRadius: '10px 10px 0 0',
                     display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
                     paddingBottom: 10,
                     border: `1px solid ${pillarBorder}`,
                     borderBottom: 'none',
-                    // Store desktop height in CSS custom property
                     ['--desktop-h' as string]: `${desktopH}px`,
                   }}>
                     <span style={{
                       fontSize: 11, fontWeight: 800, textTransform: 'uppercase',
-                      letterSpacing: '0.1em', color: isFinished ? color : color,
+                      letterSpacing: '0.1em', color,
                     }}>
                       {label}
                     </span>
@@ -237,8 +336,46 @@ export default function RankingTable() {
         </div>
       )}
 
-      {/* ═══ TABLE ═══ */}
-      <div style={{
+      {/* STICKY BAR - shows current user's position when scrolled past */}
+      {showStickyBar && currentUserEntry && (
+        <div
+          onClick={() => userRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+          style={{
+            position: 'sticky', top: 56, zIndex: 30,
+            background: 'var(--color-primary)',
+            borderRadius: 10,
+            padding: '8px 16px',
+            marginBottom: 12,
+            display: 'flex', alignItems: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            animation: 'fadeIn 0.2s ease',
+          }}
+        >
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%',
+            background: 'rgba(1,124,252,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 12, fontWeight: 800, color: '#fff', flexShrink: 0,
+          }}>
+            {currentUserIndex + 1}
+          </div>
+          <div className="flex items-center" style={{ flex: 1, gap: 8, paddingLeft: 10, minWidth: 0 }}>
+            <Avatar nickname={currentUserEntry.nickname} image={currentUserEntry.profile_image} size={26}
+              color="#fff" bg="rgba(1,124,252,0.3)" />
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
+              {currentUserEntry.nickname}
+            </span>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--color-fifa-teal)', fontVariantNumeric: 'tabular-nums' }}>
+            {currentUserEntry.total_score}
+            <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 2, opacity: 0.7 }}>pts</span>
+          </div>
+        </div>
+      )}
+
+      {/* TABLE */}
+      <div ref={tableRef} style={{
         background: 'var(--color-card)',
         borderRadius: 'var(--radius-lg)',
         boxShadow: 'var(--shadow-sm)',
@@ -261,67 +398,20 @@ export default function RankingTable() {
         </div>
 
         {/* Rows */}
-        {ranking?.map((entry, index) => (
-          <div
-            key={entry.id}
-            className="flex items-center"
-            style={{
-              padding: '10px 16px',
-              borderBottom: index < (ranking?.length || 0) - 1 ? '1px solid var(--color-border-light)' : 'none',
-              background: index < 3
-                ? index === 0 ? 'rgba(245,158,11,0.04)' : index === 1 ? 'rgba(148,163,184,0.04)' : 'rgba(217,119,6,0.04)'
-                : index % 2 === 0 ? 'transparent' : 'var(--color-bg)',
-            }}
-          >
-            {/* Position */}
-            <div style={{ width: 32, flexShrink: 0, textAlign: 'center' }}>
-              {index < 3 ? (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 24, height: 24, borderRadius: '50%', fontSize: 11, fontWeight: 700,
-                  background: index === 0 ? 'var(--color-gold-bg)' : index === 1 ? 'var(--color-silver-bg)' : 'var(--color-bronze-bg)',
-                  color: index === 0 ? 'var(--color-gold)' : index === 1 ? 'var(--color-silver)' : 'var(--color-bronze)',
-                }}>
-                  {index + 1}
-                </span>
-              ) : (
-                <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{index + 1}</span>
-              )}
+        {ranking?.map((entry, index) => {
+          const isCurrentUser = entry.id === user?.id;
+          return (
+            <div
+              key={entry.id}
+              ref={isCurrentUser ? userRowRef : undefined}
+              style={{
+                borderBottom: index < (ranking?.length || 0) - 1 ? '1px solid var(--color-border-light)' : 'none',
+              }}
+            >
+              <RankingRow entry={entry} index={index} isCurrentUser={isCurrentUser} />
             </div>
-
-            {/* Avatar + Name */}
-            <div className="flex items-center" style={{ flex: 1, gap: 8, paddingLeft: 8, minWidth: 0 }}>
-              <Avatar nickname={entry.nickname} image={entry.profile_image} size={30} />
-              <span style={{
-                fontSize: 13, fontWeight: index < 3 ? 700 : 600, color: 'var(--color-text)',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {entry.nickname}
-              </span>
-            </div>
-
-            {/* Points columns */}
-            <div style={{
-              width: 52, textAlign: 'center', fontSize: 13, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-              color: 'var(--color-text-secondary)',
-            }}>
-              {entry.score}
-            </div>
-            <div style={{
-              width: 52, textAlign: 'center', fontSize: 13, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-              color: entry.podium_score > 0 ? 'var(--color-fifa-magenta)' : 'var(--color-text-muted)',
-              fontWeight: entry.podium_score > 0 ? 700 : 400,
-            }}>
-              {entry.podium_score}
-            </div>
-            <div style={{
-              width: 56, textAlign: 'center', fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-              color: index === 0 ? 'var(--color-gold)' : index === 1 ? 'var(--color-silver)' : index === 2 ? 'var(--color-bronze)' : 'var(--color-fifa-blue)',
-            }}>
-              {entry.total_score}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {(!ranking || ranking.length === 0) && (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
@@ -329,6 +419,13 @@ export default function RankingTable() {
           </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
