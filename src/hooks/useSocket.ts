@@ -1,33 +1,24 @@
-import { useEffect, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
-
-const WS_URL = import.meta.env.VITE_WS_URL || `http://${window.location.hostname}:3000`;
+import { useEffect } from 'react';
+import { useSocketContext } from '../context/SocketContext';
 
 /**
- * Hook for WebSocket events.
- * If userId is provided, joins the user-specific room for targeted events.
+ * Hook for subscribing to WebSocket events using the global socket connection.
+ * No new connections are created — uses the shared authenticated socket.
  */
-export function useSocket(events: Record<string, (...args: any[]) => void>, userId?: string) {
-  const socketRef = useRef<Socket | null>(null);
+export function useSocket(events: Record<string, (...args: any[]) => void>) {
+  const { socket } = useSocketContext();
 
   useEffect(() => {
-    const socket = io(WS_URL, { transports: ['websocket'] });
-    socketRef.current = socket;
-
-    if (userId) {
-      socket.on('connect', () => {
-        socket.emit('join', { userId });
-      });
-    }
+    if (!socket) return;
 
     for (const [event, handler] of Object.entries(events)) {
       socket.on(event, handler);
     }
 
     return () => {
-      socket.disconnect();
+      for (const [event, handler] of Object.entries(events)) {
+        socket.off(event, handler);
+      }
     };
-  }, []);
-
-  return socketRef;
+  }, [socket]);
 }

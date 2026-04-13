@@ -1,11 +1,10 @@
 import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useAuthSocketEvents } from '../../hooks/useAuthSocketEvents';
 import Header, { COLLAPSED_W } from './Header';
 
-export default function Layout() {
-  const { isAuthenticated } = useAuth();
-
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+function AuthenticatedLayout() {
+  useAuthSocketEvents();
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--color-bg)' }}>
@@ -37,4 +36,12 @@ export default function Layout() {
       </main>
     </div>
   );
+}
+
+export default function Layout() {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  return <AuthenticatedLayout />;
 }

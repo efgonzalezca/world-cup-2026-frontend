@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import Layout from './components/layout/Layout';
 import LoginForm from './components/auth/LoginForm';
 import RegisterForm from './components/auth/RegisterForm';
@@ -26,38 +28,42 @@ const queryClient = new QueryClient({
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Toaster
-            position="top-right"
-            richColors
-            toastOptions={{
-              style: { fontSize: 13 },
-              duration: 4000,
-            }}
-          />
-          <Routes>
-            <Route path="/login" element={<LoginForm />} />
-            <Route path="/register" element={<RegisterForm />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/change-password" element={<ChangePassword />} />
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <SocketProvider>
+            <BrowserRouter>
+              <Toaster
+                position="top-right"
+                richColors
+                toastOptions={{
+                  style: { fontSize: 13 },
+                  duration: 4000,
+                }}
+              />
+              <Routes>
+                <Route path="/login" element={<LoginForm />} />
+                <Route path="/register" element={<RegisterForm />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/change-password" element={<ChangePassword />} />
 
-            <Route element={<Layout />}>
-              <Route path="/" element={<MatchesPage />} />
-              <Route path="/ranking" element={<RankingPage />} />
-              <Route path="/podium" element={<PodiumPage />} />
-              <Route path="/teams" element={<TeamsPage />} />
-              <Route path="/simulator" element={<SimulatorPage />} />
-              <Route path="/rules" element={<RulesPage />} />
-              <Route path="/admin" element={<AdminPage />} />
-            </Route>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<MatchesPage />} />
+                  <Route path="/ranking" element={<RankingPage />} />
+                  <Route path="/podium" element={<PodiumPage />} />
+                  <Route path="/teams" element={<TeamsPage />} />
+                  <Route path="/simulator" element={<SimulatorPage />} />
+                  <Route path="/rules" element={<RulesPage />} />
+                  <Route path="/admin" element={<AdminPage />} />
+                </Route>
 
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </BrowserRouter>
+          </SocketProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
