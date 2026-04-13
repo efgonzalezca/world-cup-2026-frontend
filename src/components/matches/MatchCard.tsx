@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { toast } from 'sonner';
 import { FiUsers } from 'react-icons/fi';
 import type { Match, UserMatch } from '../../types';
@@ -34,7 +34,7 @@ function Flag({ teamId, size = 40 }: { teamId: string | null; size?: number }) {
   return <span className={`fi fis fi-${code}`} style={{ width: size, height: h, borderRadius: 4, display: 'inline-block', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }} />;
 }
 
-export default function MatchCard({ match, prediction, onPredictionUpdate }: Props) {
+function MatchCard({ match, prediction, onPredictionUpdate }: Props) {
   const { user } = useAuth();
   const savedLs = prediction?.local_score?.toString() ?? '';
   const savedVs = prediction?.visitor_score?.toString() ?? '';
@@ -315,3 +315,5 @@ export default function MatchCard({ match, prediction, onPredictionUpdate }: Pro
     </>
   );
 }
+
+export default memo(MatchCard);

@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FiX, FiChevronDown, FiChevronUp } from 'react-icons/fi';
-import { io, Socket } from 'socket.io-client';
+import { FiX, FiChevronDown, FiChevronUp, FiCalendar } from 'react-icons/fi';
 import type { Match, UserMatch, DiscriminatedPoints } from '../../types';
 import { getMatchPredictionsApi } from '../../api/users';
 import { getCountryCode } from '../../utils/flags';
-
-const WS_URL = import.meta.env.VITE_WS_URL || `http://${window.location.hostname}:3000`;
+import { useSocket } from '../../hooks/useSocket';
+import { useAuth } from '../../context/AuthContext';
 
 function Flag({ teamId, size = 28 }: { teamId: string | null; size?: number }) {
   const code = getCountryCode(teamId);
@@ -15,7 +14,7 @@ function Flag({ teamId, size = 28 }: { teamId: string | null; size?: number }) {
   return <span className={`fi fis fi-${code}`} style={{ width: size, height: h, borderRadius: 3, display: 'inline-block', boxShadow: '0 0 0 1px rgba(255,255,255,0.1)' }} />;
 }
 
-function PointsBreakdown({ points }: { points: DiscriminatedPoints }) {
+const PointsBreakdown = memo(function PointsBreakdown({ points }: { points: DiscriminatedPoints }) {
   const total = points.resultPoints + points.localScorePoints + points.visitorScorePoints + points.exactScoreBonus + (points.drawBonus ?? 0);
   const rows = [
     { label: 'Acertar resultado (G/E/P)', value: points.resultPoints },
@@ -52,7 +51,7 @@ function PointsBreakdown({ points }: { points: DiscriminatedPoints }) {
       </div>
     </div>
   );
-}
+});
 
 interface Props {
   match: Match;
@@ -64,26 +63,21 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
   const [showBreakdown, setShowBreakdown] = useState(false);
   const played = match.has_played;
   const queryClient = useQueryClient();
-  const socketRef = useRef<Socket | null>(null);
+  const { user } = useAuth();
 
   const { data: allPredictions, isLoading } = useQuery({
     queryKey: ['matchPredictions', match.id],
     queryFn: () => getMatchPredictionsApi(match.id).then((r) => r.data),
   });
 
-  // Real-time: listen for prediction updates on this match
-  useEffect(() => {
-    const socket = io(WS_URL, { transports: ['websocket'] });
-    socketRef.current = socket;
-
-    socket.on('match.prediction.updated', (payload: { matchId: string }) => {
+  // Real-time: listen for prediction updates on this match via global socket
+  useSocket({
+    'match.prediction.updated': (payload: { matchId: string }) => {
       if (payload.matchId === match.id) {
         queryClient.invalidateQueries({ queryKey: ['matchPredictions', match.id] });
       }
-    });
-
-    return () => { socket.disconnect(); };
-  }, [match.id, queryClient]);
+    },
+  });
 
   // Close on Escape
   useEffect(() => {
@@ -92,11 +86,20 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  const bg = '#00173A'; // FIFA primary navy
+  // Filter out current user from participants list
+  const otherPredictions = allPredictions?.filter((p) => p.user?.id !== user?.id);
+
+  const bg = '#00173A';
   const cardBg = 'rgba(255,255,255,0.06)';
   const textPrimary = '#fff';
   const textSecondary = 'rgba(255,255,255,0.6)';
   const border = 'rgba(255,255,255,0.1)';
+
+  // Format match date
+  const matchDate = new Date(match.match_date).toLocaleDateString('es-CO', {
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 
   return (
     <>
@@ -135,7 +138,22 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
 
           <div style={{ padding: '20px 20px 24px' }}>
 
-            {/* ── Match result (when played) ── */}
+            {/* Match date */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              marginBottom: 16,
+              padding: '10px 14px',
+              borderRadius: 10,
+              background: 'rgba(255,255,255,0.04)',
+              border: `1px solid ${border}`,
+            }}>
+              <FiCalendar size={14} style={{ color: 'var(--color-fifa-teal)', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: textSecondary, textTransform: 'capitalize' }}>
+                {matchDate}
+              </span>
+            </div>
+
+            {/* Match result (when played) */}
             {played && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{
@@ -170,7 +188,7 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
               </div>
             )}
 
-            {/* ── My Prediction ── */}
+            {/* My Prediction */}
             <div style={{ marginBottom: 24 }}>
               <h3 style={{ fontSize: 13, fontWeight: 700, color: textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
                 Mi predicción
@@ -183,7 +201,6 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                 border: `1px solid ${border}`,
                 display: 'flex', flexDirection: 'column', gap: 10,
               }}>
-                {/* Local */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Flag teamId={match.local_team_id} />
@@ -198,7 +215,6 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                     {prediction?.local_score ?? '-'}
                   </span>
                 </div>
-                {/* Visitor */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Flag teamId={match.visiting_team_id} />
@@ -215,7 +231,6 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                 </div>
               </div>
 
-              {/* Points summary + breakdown (only when match has result) */}
               {played && prediction && (
                 <div style={{ marginTop: 12 }}>
                   <button
@@ -251,15 +266,22 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
               )}
             </div>
 
-            {/* ── Participants Predictions ── */}
+            {/* Participants Predictions (excluding current user) */}
             <div>
               <h3 style={{ fontSize: 13, fontWeight: 700, color: textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
                 Predicción de los participantes
               </h3>
 
               {isLoading ? (
-                <div style={{ padding: 24, textAlign: 'center', color: textSecondary, fontSize: 13 }}>
-                  Cargando...
+                <div style={{ padding: 24, textAlign: 'center' }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    border: '3px solid rgba(255,255,255,0.1)',
+                    borderTopColor: 'var(--color-fifa-teal)',
+                    animation: 'spin 0.8s linear infinite',
+                    margin: '0 auto 8px',
+                  }} />
+                  <span style={{ color: textSecondary, fontSize: 13 }}>Cargando predicciones...</span>
                 </div>
               ) : (
                 <div style={{
@@ -290,8 +312,8 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                   </div>
 
                   {/* Rows */}
-                  {allPredictions && allPredictions.length > 0 ? (
-                    allPredictions.map((p, i) => {
+                  {otherPredictions && otherPredictions.length > 0 ? (
+                    otherPredictions.map((p, i) => {
                       const hasPred = p.local_score != null && p.visitor_score != null;
                       return (
                         <div
@@ -300,7 +322,7 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                             display: 'flex', alignItems: 'center', gap: 8,
                             padding: '11px 14px',
                             background: i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'transparent',
-                            borderBottom: i < allPredictions.length - 1 ? `1px solid ${border}` : 'none',
+                            borderBottom: i < otherPredictions.length - 1 ? `1px solid ${border}` : 'none',
                           }}
                         >
                           <div style={{
@@ -355,6 +377,12 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
           </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { toast } from 'sonner';
 import { FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import { getMatchesApi } from '../../api/matches';
@@ -73,7 +73,7 @@ function LineConnector({ y, h }: { y: number; h: number }) {
 
 // ─── Bracket MatchSlot ───────────────────────────────────────────────────────
 
-function BracketSlot({
+const BracketSlot = memo(function BracketSlot({
   match, prediction, onPredictionUpdate,
 }: { match: Match; prediction?: UserMatch; onPredictionUpdate: () => void }) {
   const { user } = useAuth();
@@ -137,7 +137,9 @@ function BracketSlot({
           color: winner ? 'var(--color-text)' : 'var(--color-text-secondary)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          {teamId ?? 'TBD'}
+          {local
+            ? (match.local_team?.name || teamId || 'TBD')
+            : (match.visiting_team?.name || teamId || 'TBD')}
         </span>
         {played ? (
           <>
@@ -248,7 +250,7 @@ function BracketSlot({
       {detailOpen && <MatchDetailModal match={match} prediction={prediction} onClose={() => setDetailOpen(false)} />}
     </div>
   );
-}
+});
 
 // ─── Round column ────────────────────────────────────────────────────────────
 

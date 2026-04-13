@@ -97,12 +97,18 @@ function AdminMatchRow({ match, onSave }: { match: Match; onSave: () => void }) 
 
         {/* Matchup */}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, minWidth: 0 }}>
-          <span style={{
+          <span className="hidden sm:inline" style={{
             fontSize: 12, fontWeight: 600, color: 'var(--color-text)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             textAlign: 'right', flex: 1, minWidth: 0,
           }}>
             {match.local_team?.name || 'TBD'}
+          </span>
+          <span className="sm:hidden" style={{
+            fontSize: 11, fontWeight: 700, color: 'var(--color-text)',
+            whiteSpace: 'nowrap',
+          }}>
+            {match.local_team_id || 'TBD'}
           </span>
           <Flag teamId={match.local_team_id} size={22} />
 
@@ -154,12 +160,18 @@ function AdminMatchRow({ match, onSave }: { match: Match; onSave: () => void }) 
           )}
 
           <Flag teamId={match.visiting_team_id} size={22} />
-          <span style={{
+          <span className="hidden sm:inline" style={{
             fontSize: 12, fontWeight: 600, color: 'var(--color-text)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             flex: 1, minWidth: 0,
           }}>
             {match.visiting_team?.name || 'TBD'}
+          </span>
+          <span className="sm:hidden" style={{
+            fontSize: 11, fontWeight: 700, color: 'var(--color-text)',
+            whiteSpace: 'nowrap',
+          }}>
+            {match.visiting_team_id || 'TBD'}
           </span>
         </div>
 

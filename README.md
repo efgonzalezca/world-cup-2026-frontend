@@ -32,7 +32,7 @@ src/
 ├── components/
 │   ├── admin/         # Panel de administracion (registrar resultados)
 │   ├── auth/          # Login, registro, recuperar contrasena
-│   ├── common/        # Componentes compartidos
+│   ├── common/        # ErrorBoundary, Spinner y componentes compartidos
 │   ├── layout/        # Header, ProfileModal, Layout
 │   ├── matches/       # MatchCard, MatchRow, GroupMatches, BracketView, MatchDetailModal
 │   ├── podium/        # PodiumSelector (prediccion de campeon, sub, 3ro)
@@ -40,9 +40,11 @@ src/
 │   ├── rules/         # Reglamento del torneo
 │   └── simulator/     # Simulador de puntos
 ├── context/
-│   └── AuthContext.tsx # Estado de autenticacion (JWT, usuario, WebSocket global)
+│   ├── AuthContext.tsx    # Estado de autenticacion (JWT, usuario)
+│   └── SocketContext.tsx  # Conexion WebSocket global (JWT auth, reconexion automatica)
 ├── hooks/
-│   └── useSocket.ts   # Hook para escuchar eventos WebSocket
+│   ├── useSocket.ts            # Hook para escuchar eventos WebSocket
+│   └── useAuthSocketEvents.ts  # Eventos de perfil y force logout
 ├── pages/             # Paginas de ruta
 │   ├── MatchesPage.tsx
 │   ├── RankingPage.tsx
@@ -75,6 +77,8 @@ src/
 - Tabla de posiciones en tiempo real
 - Puntaje de partidos + puntaje de podio = total
 - Avatares de usuario
+- Indicador sticky del usuario actual: al hacer scroll se mantiene visible la posicion del jugador en sesion
+- Resaltado visual del jugador en sesion (borde azul y etiqueta "(Tu)")
 
 ### Podio (`/podium`)
 - Selector de campeon, subcampeon y tercer lugar
@@ -102,11 +106,19 @@ src/
 
 ## Tiempo Real (WebSocket)
 
-La aplicacion escucha eventos en tiempo real:
+La aplicacion mantiene una unica conexion WebSocket global autenticada con JWT (`SocketContext`). Los componentes se suscriben a eventos sin abrir nuevas conexiones.
+
 - **Predicciones**: Se actualizan al guardar (otros participantes ven cambios)
 - **Resultados**: Ranking y puntos se recalculan instantaneamente
 - **Perfil**: Avatares se actualizan en toda la app
-- **Seguridad**: Force logout al cambiar contrasena
+- **Seguridad**: Force logout al cambiar contrasena, conexion autenticada con JWT
+- **Reconexion**: Automatica con hasta 10 intentos (1-5s de delay)
+
+## Manejo de Errores
+
+- **ErrorBoundary**: Atrapa errores de renderizado con UI de recuperacion
+- **Timeout API**: 15 segundos en todas las peticiones HTTP
+- **Spinner**: Componente de carga reutilizable con label opcional
 
 ## Requisitos
 

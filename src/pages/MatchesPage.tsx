@@ -25,7 +25,7 @@ export default function MatchesPage() {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       refetch();
     },
-  }, user?.id);
+  });
 
   const tabs = [
     { key: 'groups' as const, label: 'Fase de Grupos' },

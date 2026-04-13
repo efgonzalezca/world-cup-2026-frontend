@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { toast } from 'sonner';
 import { FiChevronRight } from 'react-icons/fi';
 import type { Match, UserMatch } from '../../types';
@@ -39,7 +39,7 @@ const SLOT = 30;  // score slot width
 const SLOT_H = 28;
 const MID = 32;   // center divider width
 
-export default function MatchRow({ match, prediction, onPredictionUpdate }: Props) {
+function MatchRow({ match, prediction, onPredictionUpdate }: Props) {
   const { user } = useAuth();
   const savedLs = prediction?.local_score?.toString() ?? '';
   const savedVs = prediction?.visitor_score?.toString() ?? '';
@@ -135,13 +135,19 @@ export default function MatchRow({ match, prediction, onPredictionUpdate }: Prop
           */}
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
 
-            {/* Local: name + flag */}
+            {/* Local: name + code + flag */}
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, justifyContent: 'flex-end' }}>
-              <span style={{
+              <span className="hidden sm:inline" style={{
                 fontSize: 12, fontWeight: 600, color: 'var(--color-text)',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {match.local_team?.name || 'TBD'}
+              </span>
+              <span className="sm:hidden" style={{
+                fontSize: 11, fontWeight: 700, color: 'var(--color-text)',
+                whiteSpace: 'nowrap',
+              }}>
+                {match.local_team_id || 'TBD'}
               </span>
               <Flag teamId={match.local_team_id} />
             </div>
@@ -237,11 +243,17 @@ export default function MatchRow({ match, prediction, onPredictionUpdate }: Prop
             {/* Visitor: flag + name */}
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
               <Flag teamId={match.visiting_team_id} />
-              <span style={{
+              <span className="hidden sm:inline" style={{
                 fontSize: 12, fontWeight: 600, color: 'var(--color-text)',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {match.visiting_team?.name || 'TBD'}
+              </span>
+              <span className="sm:hidden" style={{
+                fontSize: 11, fontWeight: 700, color: 'var(--color-text)',
+                whiteSpace: 'nowrap',
+              }}>
+                {match.visiting_team_id || 'TBD'}
               </span>
             </div>
           </div>
@@ -266,3 +278,5 @@ export default function MatchRow({ match, prediction, onPredictionUpdate }: Prop
     </>
   );
 }
+
+export default memo(MatchRow);
