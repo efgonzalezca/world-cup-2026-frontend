@@ -8,6 +8,13 @@ import {
 } from 'react-icons/fi';
 import ProfileModal from './ProfileModal';
 
+const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
+
+function resolveAvatar(src: string | null | undefined): string | null {
+  if (!src) return null;
+  return `${API_URL}${src}`;
+}
+
 const NAV_ITEMS = [
   { path: '/',           label: 'Partidos',      icon: FiCalendar  },
   { path: '/ranking',    label: 'Clasificación', icon: FiBarChart2 },
@@ -29,7 +36,7 @@ export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const { user, logout } = useAuth();
-  const avatarUrl = user?.profile_image || null;
+  const avatarUrl = resolveAvatar(user?.profile_image);
   const navigate = useNavigate();
   const location = useLocation();
 

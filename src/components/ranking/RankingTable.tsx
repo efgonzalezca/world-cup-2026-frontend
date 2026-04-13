@@ -28,11 +28,16 @@ const STATE_BADGE: Record<TournamentState, { label: string; icon: typeof FiTrend
   finished:    { label: 'Finalizado',   icon: FiCheckCircle, color: 'var(--color-success)',     bg: 'var(--color-success-bg)' },
 };
 
+function resolveAvatar(src: string | null | undefined): string | null {
+  if (!src) return null;
+  return `${API_URL}${src}`;
+}
+
 function Avatar({ nickname, image, size = 34, color = 'var(--color-fifa-blue)', bg = 'var(--color-fifa-blue-light)' }: {
   nickname: string; image?: string | null; size?: number; color?: string; bg?: string;
 }) {
-  if (image) {
-    const src = image.startsWith('data:') ? image : `${API_URL}${image}`;
+  const src = resolveAvatar(image);
+  if (src) {
     return <img src={src} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />;
   }
   return (

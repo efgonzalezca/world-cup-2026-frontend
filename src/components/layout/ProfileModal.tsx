@@ -4,6 +4,13 @@ import { FiCamera, FiX, FiCheck } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
 import { updateUserApi, uploadAvatarApi } from '../../api/users';
 
+const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
+
+function resolveAvatar(src: string | null | undefined): string | null {
+  if (!src) return null;
+  return `${API_URL}${src}`;
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -39,7 +46,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const pwMismatch = confirm.length > 0 && password.length > 0 && confirm !== password;
   const pwValid = password.length >= 6 && confirm === password;
 
-  const avatarSrc = user?.profile_image || null;
+  const avatarSrc = resolveAvatar(user?.profile_image);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
