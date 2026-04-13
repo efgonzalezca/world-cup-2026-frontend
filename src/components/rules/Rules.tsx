@@ -176,6 +176,7 @@ export default function Rules() {
             'Las predicciones se bloquean al inicio de cada partido',
             'Puedes modificar tus predicciones sin límite antes del bloqueo',
             'La puntuación es uniforme para todas las fases del torneo',
+            'El marcador válido es hasta el minuto 90 + tiempo adicional. Tiempo extra y penaltis no cuentan para el cálculo de puntos',
             'El ranking se actualiza en tiempo real al registrar resultados',
             'La predicción de podio tiene fecha límite por definir',
             'Puntaje total = puntaje de partidos + puntaje de podio',

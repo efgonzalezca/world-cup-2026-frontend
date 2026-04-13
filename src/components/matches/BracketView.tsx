@@ -187,6 +187,10 @@ const BracketSlot = memo(function BracketSlot({
     setDetailOpen(true);
   };
 
+  const matchDate = new Date(match.match_date);
+  const dateStr = matchDate.toLocaleDateString('es', { day: 'numeric', month: 'short' });
+  const timeStr = matchDate.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+
   return (
     <div style={{ position: 'relative', width: MATCH_W }}>
       <div
@@ -201,6 +205,18 @@ const BracketSlot = memo(function BracketSlot({
           transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
         }}
       >
+        <div style={{
+          padding: '3px 8px',
+          fontSize: 9,
+          color: 'var(--color-text-muted)',
+          textAlign: 'center',
+          borderBottom: '1px solid var(--color-border-light)',
+          background: 'var(--color-bg)',
+          fontWeight: 600,
+          letterSpacing: '0.02em',
+        }}>
+          {dateStr} · {timeStr}
+        </div>
         <TeamRow local={true} />
         <TeamRow local={false} />
       </div>
@@ -416,7 +432,7 @@ export default function BracketView({ predictions, onPredictionUpdate }: Props) 
     }
   };
 
-  const H = 600;
+  const H = 720;
   const sfY = yOf(0, 1, H);
   const finalMatch = byPhase('final')[0];
   const thirdMatch = byPhase('third_place')[0];
