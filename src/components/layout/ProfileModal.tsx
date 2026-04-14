@@ -3,13 +3,7 @@ import { toast } from 'sonner';
 import { FiCamera, FiX, FiCheck } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
 import { updateUserApi, uploadAvatarApi } from '../../api/users';
-
-const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
-
-function resolveAvatar(src: string | null | undefined): string | null {
-  if (!src) return null;
-  return `${API_URL}${src}`;
-}
+import { resolveAvatar } from '../../utils/avatar';
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

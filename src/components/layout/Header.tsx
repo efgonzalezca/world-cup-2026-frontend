@@ -7,13 +7,7 @@ import {
   FiMenu, FiX, FiChevronsRight, FiChevronsLeft,
 } from 'react-icons/fi';
 import ProfileModal from './ProfileModal';
-
-const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
-
-function resolveAvatar(src: string | null | undefined): string | null {
-  if (!src) return null;
-  return `${API_URL}${src}`;
-}
+import { resolveAvatar } from '../../utils/avatar';
 
 const NAV_ITEMS = [
   { path: '/',           label: 'Partidos',      icon: FiCalendar  },

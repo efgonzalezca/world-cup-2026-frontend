@@ -1,11 +1,11 @@
 import client from './client';
-import type { RankingEntry, UserMatch } from '../types';
+import type { PaginatedRanking, PaginatedMatchPredictions } from '../types';
 
-export const getRankingApi = () =>
-  client.get<RankingEntry[]>('/users');
+export const getRankingApi = (page = 1, limit = 20) =>
+  client.get<PaginatedRanking>('/users', { params: { page, limit } });
 
-export const getMatchPredictionsApi = (matchId: string) =>
-  client.get<UserMatch[]>(`/users/matches/${matchId}`);
+export const getMatchPredictionsApi = (matchId: string, page = 1, limit = 30) =>
+  client.get<PaginatedMatchPredictions>(`/users/matches/${matchId}`, { params: { page, limit } });
 
 export const updateUserApi = (userId: string, data: Record<string, unknown>) =>
   client.patch(`/users/${userId}`, data);

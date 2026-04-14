@@ -100,3 +100,17 @@ export interface AuthState {
   logout: () => void;
   updateUser: (user: Partial<User>) => void;
 }
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages?: number;
+}
+
+export interface PaginatedRanking extends PaginatedResponse<RankingEntry> {
+  currentUser: (RankingEntry & { position: number }) | null;
+}
+
+export type PaginatedMatchPredictions = PaginatedResponse<UserMatch>;

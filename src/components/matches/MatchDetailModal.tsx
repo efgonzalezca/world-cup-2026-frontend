@@ -1,7 +1,7 @@
-import { useState, useEffect, memo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { FiX, FiChevronDown, FiChevronUp, FiCalendar } from 'react-icons/fi';
-import type { Match, UserMatch, DiscriminatedPoints } from '../../types';
+import type { Match, UserMatch, DiscriminatedPoints, PaginatedMatchPredictions } from '../../types';
 import { getMatchPredictionsApi } from '../../api/users';
 import { getCountryCode } from '../../utils/flags';
 import { useSocket } from '../../hooks/useSocket';
@@ -53,6 +53,8 @@ const PointsBreakdown = memo(function PointsBreakdown({ points }: { points: Disc
   );
 });
 
+const PRED_PAGE_SIZE = 30;
+
 interface Props {
   match: Match;
   prediction?: UserMatch;
@@ -64,13 +66,50 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
   const played = match.has_played;
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const { data: allPredictions, isLoading } = useQuery({
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useInfiniteQuery<PaginatedMatchPredictions>({
     queryKey: ['matchPredictions', match.id],
-    queryFn: () => getMatchPredictionsApi(match.id).then((r) => r.data),
+    queryFn: ({ pageParam }) =>
+      getMatchPredictionsApi(match.id, pageParam as number, PRED_PAGE_SIZE).then((r) => r.data),
+    getNextPageParam: (lastPage) => {
+      const nextPage = lastPage.page + 1;
+      return nextPage <= Math.ceil(lastPage.total / lastPage.limit) ? nextPage : undefined;
+    },
+    initialPageParam: 1,
   });
 
-  // Real-time: listen for prediction updates on this match via global socket
+  const allPredictions = useMemo(
+    () => data?.pages.flatMap((p) => p.data) || [],
+    [data],
+  );
+
+  const otherPredictions = useMemo(
+    () => allPredictions.filter((p) => p.user?.id !== user?.id),
+    [allPredictions, user?.id],
+  );
+
+  // Infinite scroll inside the modal
+  useEffect(() => {
+    if (!sentinelRef.current || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: '100px' },
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   useSocket({
     'match.prediction.updated': (payload: { matchId: string }) => {
       if (payload.matchId === match.id) {
@@ -79,15 +118,11 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
     },
   });
 
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
-
-  // Filter out current user from participants list
-  const otherPredictions = allPredictions?.filter((p) => p.user?.id !== user?.id);
 
   const bg = '#00173A';
   const cardBg = 'rgba(255,255,255,0.06)';
@@ -95,7 +130,6 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
   const textSecondary = 'rgba(255,255,255,0.6)';
   const border = 'rgba(255,255,255,0.1)';
 
-  // Format match date
   const matchDate = new Date(match.match_date).toLocaleDateString('es-CO', {
     weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -312,7 +346,7 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                   </div>
 
                   {/* Rows */}
-                  {otherPredictions && otherPredictions.length > 0 ? (
+                  {otherPredictions.length > 0 ? (
                     otherPredictions.map((p, i) => {
                       const hasPred = p.local_score != null && p.visitor_score != null;
                       return (
@@ -369,6 +403,21 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                   ) : (
                     <div style={{ padding: 24, textAlign: 'center', color: textSecondary, fontSize: 13 }}>
                       No hay participantes activos
+                    </div>
+                  )}
+
+                  {/* Infinite scroll sentinel */}
+                  <div ref={sentinelRef} style={{ height: 1 }} />
+
+                  {isFetchingNextPage && (
+                    <div style={{ padding: 12, textAlign: 'center' }}>
+                      <div style={{
+                        width: 20, height: 20, borderRadius: '50%',
+                        border: '2px solid rgba(255,255,255,0.1)',
+                        borderTopColor: 'var(--color-fifa-teal)',
+                        animation: 'spin 0.8s linear infinite',
+                        margin: '0 auto',
+                      }} />
                     </div>
                   )}
                 </div>

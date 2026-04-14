@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, useRef, useCallback, memo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRankingApi } from '../../api/users';
 import { getMatchesApi } from '../../api/matches';
 import { useSocket } from '../../hooks/useSocket';
 import { useAuth } from '../../context/AuthContext';
 import { FiTrendingUp, FiCheckCircle, FiActivity } from 'react-icons/fi';
-
-const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
+import { resolveAvatar } from '../../utils/avatar';
+import type { PaginatedRanking, RankingEntry } from '../../types';
 
 type TournamentState = 'upcoming' | 'live' | 'in_progress' | 'finished';
 
@@ -27,11 +27,6 @@ const STATE_BADGE: Record<TournamentState, { label: string; icon: typeof FiTrend
   live:        { label: 'En vivo',      icon: FiActivity,    color: '#F59E0B',                  bg: 'rgba(245,158,11,0.1)', pulse: true },
   finished:    { label: 'Finalizado',   icon: FiCheckCircle, color: 'var(--color-success)',     bg: 'var(--color-success-bg)' },
 };
-
-function resolveAvatar(src: string | null | undefined): string | null {
-  if (!src) return null;
-  return `${API_URL}${src}`;
-}
 
 function Avatar({ nickname, image, size = 34, color = 'var(--color-fifa-blue)', bg = 'var(--color-fifa-blue-light)' }: {
   nickname: string; image?: string | null; size?: number; color?: string; bg?: string;
@@ -54,14 +49,10 @@ function Avatar({ nickname, image, size = 34, color = 'var(--color-fifa-blue)', 
 
 const MEDAL_EMOJI: Record<number, string> = { 0: '\uD83E\uDD47', 1: '\uD83E\uDD48', 2: '\uD83E\uDD49' };
 
-interface RankingEntry {
-  id: string;
-  nickname: string;
-  score: number;
-  podium_score: number;
-  total_score: number;
-  profile_image?: string | null;
-}
+const PAGE_SIZE = 50;
+const MAX_PAGES_IN_MEMORY = 10;
+const WS_DEBOUNCE_MS = 500;
+const LOAD_COOLDOWN_MS = 800;
 
 const RankingRow = memo(function RankingRow({ entry, index, isCurrentUser }: {
   entry: RankingEntry; index: number; isCurrentUser: boolean;
@@ -79,7 +70,6 @@ const RankingRow = memo(function RankingRow({ entry, index, isCurrentUser }: {
         borderLeft: isCurrentUser ? '3px solid var(--color-fifa-blue)' : '3px solid transparent',
       }}
     >
-      {/* Position */}
       <div style={{ width: 32, flexShrink: 0, textAlign: 'center' }}>
         {index < 3 ? (
           <span style={{
@@ -95,7 +85,6 @@ const RankingRow = memo(function RankingRow({ entry, index, isCurrentUser }: {
         )}
       </div>
 
-      {/* Avatar + Name */}
       <div className="flex items-center" style={{ flex: 1, gap: 8, paddingLeft: 8, minWidth: 0 }}>
         <Avatar nickname={entry.nickname} image={entry.profile_image} size={30} />
         <span style={{
@@ -108,7 +97,6 @@ const RankingRow = memo(function RankingRow({ entry, index, isCurrentUser }: {
         </span>
       </div>
 
-      {/* Points columns */}
       <div style={{
         width: 52, textAlign: 'center', fontSize: 13, fontVariantNumeric: 'tabular-nums', flexShrink: 0,
         color: 'var(--color-text-secondary)',
@@ -134,14 +122,41 @@ const RankingRow = memo(function RankingRow({ entry, index, isCurrentUser }: {
 
 export default function RankingTable() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [tick, setTick] = useState(0);
   const tableRef = useRef<HTMLDivElement>(null);
-  const [showStickyBar, setShowStickyBar] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const stickyBarVisible = useRef(false);
+  const [stickyBarShown, setStickyBarShown] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const cooldownRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [pendingLoad, setPendingLoad] = useState(false);
 
-  const { data: ranking, refetch } = useQuery({
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<PaginatedRanking>({
     queryKey: ['ranking'],
-    queryFn: () => getRankingApi().then((r) => r.data),
+    queryFn: ({ pageParam }) =>
+      getRankingApi(pageParam as number, PAGE_SIZE).then((r) => r.data),
+    getNextPageParam: (lastPage) => {
+      const totalPages = lastPage.totalPages ?? Math.ceil(lastPage.total / lastPage.limit);
+      return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
+    },
+    initialPageParam: 1,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    maxPages: MAX_PAGES_IN_MEMORY,
   });
+
+  const ranking = useMemo(
+    () => data?.pages.flatMap((p) => p.data) || [],
+    [data],
+  );
+  const currentUser = data?.pages[0]?.currentUser ?? null;
+  const totalUsers = data?.pages[0]?.total ?? 0;
 
   const { data: allMatches, refetch: refetchMatches } = useQuery({
     queryKey: ['matches-all'],
@@ -149,11 +164,67 @@ export default function RankingTable() {
     staleTime: 30_000,
   });
 
+  // Debounced ranking invalidation — collapses rapid WS events into a single refetch
+  const debouncedInvalidateRanking = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['ranking'] });
+    }, WS_DEBOUNCE_MS);
+  }, [queryClient]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (cooldownRef.current) clearTimeout(cooldownRef.current);
+    };
+  }, []);
+
   useSocket({
-    'ranking.updated': () => refetch(),
-    'score.updated': () => { refetch(); refetchMatches(); },
-    'match.result': () => { refetchMatches(); refetch(); },
+    'ranking.updated': debouncedInvalidateRanking,
+    'score.updated': () => {
+      debouncedInvalidateRanking();
+      refetchMatches();
+    },
+    'match.result': () => {
+      refetchMatches();
+      debouncedInvalidateRanking();
+    },
+    'user.registered': () => {
+      queryClient.resetQueries({ queryKey: ['ranking'] });
+    },
   });
+
+  // Clear pending load when a fetch completes
+  useEffect(() => {
+    if (!isFetchingNextPage) setPendingLoad(false);
+  }, [isFetchingNextPage]);
+
+  // Infinite scroll observer with cooldown delay
+  useEffect(() => {
+    if (!sentinelRef.current || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          // Sentinel entered viewport → start cooldown
+          setPendingLoad(true);
+          if (cooldownRef.current) clearTimeout(cooldownRef.current);
+          cooldownRef.current = setTimeout(() => {
+            fetchNextPage();
+          }, LOAD_COOLDOWN_MS);
+        } else if (!entry.isIntersecting) {
+          // Sentinel left viewport → cancel if user scrolled back up
+          if (cooldownRef.current) clearTimeout(cooldownRef.current);
+          setPendingLoad(false);
+        }
+      },
+      { rootMargin: '40px' },
+    );
+    observer.observe(sentinelRef.current);
+    return () => {
+      observer.disconnect();
+      if (cooldownRef.current) clearTimeout(cooldownRef.current);
+    };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const nextKickoff = useMemo(() => {
     if (!allMatches?.length) return null;
@@ -176,26 +247,35 @@ export default function RankingTable() {
     return () => clearTimeout(timer);
   }, [nextKickoff, refetchMatches]);
 
-  // Find current user's position
+  // Find current user's index in loaded data
   const currentUserIndex = useMemo(
-    () => ranking?.findIndex((e) => e.id === user?.id) ?? -1,
+    () => ranking.findIndex((e) => e.id === user?.id),
     [ranking, user?.id],
   );
-  const currentUserEntry = currentUserIndex >= 0 ? ranking![currentUserIndex] : null;
 
-  // Detect if user row is visible in the table
   const userRowRef = useRef<HTMLDivElement>(null);
 
+  // Sticky bar visibility — always in DOM, controlled via CSS
   const checkVisibility = useCallback(() => {
-    if (!userRowRef.current || !tableRef.current) {
-      setShowStickyBar(currentUserIndex > 5);
+    if (!currentUser) {
+      if (stickyBarVisible.current) {
+        stickyBarVisible.current = false;
+        setStickyBarShown(false);
+      }
       return;
     }
-    const tableRect = tableRef.current.getBoundingClientRect();
-    const rowRect = userRowRef.current.getBoundingClientRect();
-    const isVisible = rowRect.top >= tableRect.top - 10 && rowRect.bottom <= window.innerHeight + 10;
-    setShowStickyBar(!isVisible);
-  }, [currentUserIndex]);
+    let shouldShow: boolean;
+    if (!userRowRef.current) {
+      shouldShow = true;
+    } else {
+      const rowRect = userRowRef.current.getBoundingClientRect();
+      shouldShow = rowRect.top < 0 || rowRect.bottom > window.innerHeight;
+    }
+    if (shouldShow !== stickyBarVisible.current) {
+      stickyBarVisible.current = shouldShow;
+      setStickyBarShown(shouldShow);
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     checkVisibility();
@@ -207,7 +287,7 @@ export default function RankingTable() {
   const badge = STATE_BADGE[tournamentState];
   const isFinished = tournamentState === 'finished';
 
-  const top3 = ranking?.slice(0, 3) || [];
+  const top3 = ranking.slice(0, 3);
 
   const podiumConfig = [
     { index: 1, label: '2do', color: 'var(--color-silver)', bg: 'var(--color-silver-bg)', height: 80, desktopH: 110, order: 1 },
@@ -217,6 +297,8 @@ export default function RankingTable() {
 
   const BadgeIcon = badge.icon;
 
+  const showLoader = pendingLoad || isFetchingNextPage;
+
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
       {/* HEADER */}
@@ -225,6 +307,7 @@ export default function RankingTable() {
           <h2 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Clasificación</h2>
           <p className="text-sm" style={{ color: 'var(--color-text-muted)', marginTop: 2 }}>
             {isFinished ? 'Resultado final del torneo' : 'Ranking en tiempo real'}
+            {totalUsers > 0 && <span style={{ marginLeft: 6, opacity: 0.7 }}>({totalUsers} participantes)</span>}
           </p>
         </div>
         <div className="flex items-center gap-2" style={{
@@ -341,20 +424,27 @@ export default function RankingTable() {
         </div>
       )}
 
-      {/* STICKY BAR - shows current user's position when scrolled past */}
-      {showStickyBar && currentUserEntry && (
+      {/* STICKY BAR — always in DOM, visibility controlled via CSS to prevent flicker */}
+      {currentUser && (
         <div
+          className="ranking-sticky-bar"
           onClick={() => userRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
           style={{
-            position: 'sticky', top: 56, zIndex: 30,
+            position: 'sticky', zIndex: 30,
             background: 'var(--color-primary)',
             borderRadius: 10,
             padding: '8px 16px',
-            marginBottom: 12,
+            marginBottom: stickyBarShown ? 12 : 0,
             display: 'flex', alignItems: 'center',
             cursor: 'pointer',
             boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-            animation: 'fadeIn 0.2s ease',
+            opacity: stickyBarShown ? 1 : 0,
+            visibility: stickyBarShown ? 'visible' : 'hidden',
+            transform: stickyBarShown ? 'translateY(0)' : 'translateY(-8px)',
+            maxHeight: stickyBarShown ? 60 : 0,
+            overflow: 'hidden',
+            transition: 'opacity 0.2s ease, transform 0.2s ease, max-height 0.2s ease, margin-bottom 0.2s ease',
+            pointerEvents: stickyBarShown ? 'auto' : 'none',
           }}
         >
           <div style={{
@@ -363,17 +453,17 @@ export default function RankingTable() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 12, fontWeight: 800, color: '#fff', flexShrink: 0,
           }}>
-            {currentUserIndex + 1}
+            {currentUserIndex >= 0 ? currentUserIndex + 1 : currentUser.position}
           </div>
           <div className="flex items-center" style={{ flex: 1, gap: 8, paddingLeft: 10, minWidth: 0 }}>
-            <Avatar nickname={currentUserEntry.nickname} image={currentUserEntry.profile_image} size={26}
+            <Avatar nickname={currentUser.nickname} image={currentUser.profile_image} size={26}
               color="#fff" bg="rgba(1,124,252,0.3)" />
             <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
-              {currentUserEntry.nickname}
+              {currentUser.nickname}
             </span>
           </div>
           <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--color-fifa-teal)', fontVariantNumeric: 'tabular-nums' }}>
-            {currentUserEntry.total_score}
+            {currentUser.total_score}
             <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 2, opacity: 0.7 }}>pts</span>
           </div>
         </div>
@@ -403,20 +493,52 @@ export default function RankingTable() {
         </div>
 
         {/* Rows */}
-        {ranking?.map((entry, index) => {
+        {ranking.map((entry, index) => {
           const isCurrentUser = entry.id === user?.id;
           return (
             <div
               key={entry.id}
               ref={isCurrentUser ? userRowRef : undefined}
               style={{
-                borderBottom: index < (ranking?.length || 0) - 1 ? '1px solid var(--color-border-light)' : 'none',
+                borderBottom: index < ranking.length - 1 ? '1px solid var(--color-border-light)' : 'none',
               }}
             >
               <RankingRow entry={entry} index={index} isCurrentUser={isCurrentUser} />
             </div>
           );
         })}
+
+        {/* Infinite scroll sentinel — only rendered when there are more pages */}
+        {hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} />}
+
+        {/* Cooldown loader — shown during delay before request fires */}
+        {showLoader && (
+          <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: '50%',
+              border: '2.5px solid var(--color-border)',
+              borderTopColor: 'var(--color-fifa-blue)',
+              animation: 'spin 0.8s linear infinite',
+              flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              Cargando participantes...
+            </span>
+          </div>
+        )}
+
+        {/* End of list indicator */}
+        {!hasNextPage && ranking.length > 0 && (
+          <div style={{
+            padding: '12px 16px',
+            textAlign: 'center',
+            color: 'var(--color-text-muted)',
+            fontSize: 12,
+            borderTop: '1px solid var(--color-border-light)',
+          }}>
+            Mostrando {ranking.length} de {totalUsers} participantes
+          </div>
+        )}
 
         {(!ranking || ranking.length === 0) && (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
@@ -429,6 +551,17 @@ export default function RankingTable() {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-8px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .ranking-sticky-bar {
+          top: 68px;
+        }
+        @media (min-width: 1024px) {
+          .ranking-sticky-bar {
+            top: 12px;
+          }
         }
       `}</style>
     </div>
