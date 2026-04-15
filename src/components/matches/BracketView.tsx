@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, useRef, useCallback, useEffect, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { FiChevronDown, FiChevronUp, FiChevronRight, FiChevronLeft } from 'react-icons/fi';
 import { getMatchesApi } from '../../api/matches';
 import type { Match, UserMatch, MatchPhase } from '../../types';
 import { updatePredictionApi } from '../../api/users';
 import { useAuth } from '../../context/AuthContext';
 import { getCountryCode } from '../../utils/flags';
-import MatchRow from './MatchRow';
 import MatchDetailModal from './MatchDetailModal';
 
 // ─── Layout constants ────────────────────────────────────────────────────────
@@ -83,15 +83,37 @@ const BracketSlot = memo(function BracketSlot({
   const [vs, setVs] = useState(savedVs);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [justUpdated, setJustUpdated] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const prevData = useRef({
+    lr: match.local_result, vr: match.visiting_result, hp: match.has_played,
+    pls: prediction?.local_score, pvs: prediction?.visitor_score,
+  });
 
   useEffect(() => { setLs(savedLs); setVs(savedVs); }, [savedLs, savedVs]);
+
+  // Detect external updates (websocket): match results OR prediction changes
+  useEffect(() => {
+    const prev = prevData.current;
+    const matchChanged = prev.lr !== match.local_result || prev.vr !== match.visiting_result || prev.hp !== match.has_played;
+    const predChanged = prev.pls !== prediction?.local_score || prev.pvs !== prediction?.visitor_score;
+    prevData.current = {
+      lr: match.local_result, vr: match.visiting_result, hp: match.has_played,
+      pls: prediction?.local_score, pvs: prediction?.visitor_score,
+    };
+    if ((matchChanged || predChanged) && !saving) {
+      setJustUpdated(true);
+      setTimeout(() => setJustUpdated(false), 4000);
+    }
+  }, [match.local_result, match.visiting_result, match.has_played, prediction?.local_score, prediction?.visitor_score, saving]);
 
   const played = match.has_played;
   const isPast = new Date() >= new Date(match.match_date);
   const isLocked = played || isPast;
   const canPredict = !isLocked;
   const hasChanges = ls !== '' && vs !== '' && (ls !== savedLs || vs !== savedVs);
+  const showActions = isEditing || hasChanges;
 
   const save = async () => {
     if (!user || !hasChanges || isLocked) return;
@@ -100,10 +122,17 @@ const BracketSlot = memo(function BracketSlot({
       await updatePredictionApi(user.id, match.id, parseInt(ls), parseInt(vs));
       toast.success('Predicción actualizada');
       setJustSaved(true);
+      setIsEditing(false);
       setTimeout(() => setJustSaved(false), 10000);
       onPredictionUpdate();
     } catch { toast.error('Error al guardar'); }
     finally { setSaving(false); }
+  };
+
+  const cancel = () => {
+    setLs(savedLs);
+    setVs(savedVs);
+    setIsEditing(false);
   };
 
   const lCode = getCountryCode(match.local_team_id);
@@ -111,7 +140,7 @@ const BracketSlot = memo(function BracketSlot({
   const lWins = played && (match.local_result ?? -1) > (match.visiting_result ?? -1);
   const vWins = played && (match.visiting_result ?? -1) > (match.local_result ?? -1);
 
-  const TeamRow = ({ local }: { local: boolean }) => {
+  const renderTeamRow = (local: boolean) => {
     const teamId = local ? match.local_team_id : match.visiting_team_id;
     const code = local ? lCode : vCode;
     const winner = local ? lWins : vWins;
@@ -120,7 +149,7 @@ const BracketSlot = memo(function BracketSlot({
     const predScore = local ? savedLs : savedVs;
 
     return (
-      <div style={{
+      <div key={local ? 'local' : 'visitor'} style={{
         display: 'flex', alignItems: 'center', gap: 5,
         padding: '6px 8px',
         borderBottom: local ? '1px solid var(--color-border-light)' : 'none',
@@ -142,21 +171,26 @@ const BracketSlot = memo(function BracketSlot({
             : (match.visiting_team?.name || teamId || 'TBD')}
         </span>
         {played ? (
-          <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             <span style={{
-              fontSize: 11, fontWeight: 600, minWidth: 16, textAlign: 'center',
-              color: 'var(--color-text-muted)',
+              fontSize: 10, fontWeight: 700, minWidth: 18, textAlign: 'center',
+              color: 'var(--color-fifa-blue)',
+              background: 'var(--color-fifa-blue-light)',
+              borderRadius: 4, padding: '1px 3px',
+              lineHeight: 1.4,
             }}>
               {predScore || '-'}
             </span>
             <span style={{
-              fontSize: 12, fontWeight: winner ? 800 : 600, minWidth: 16, textAlign: 'center',
-              color: winner ? 'var(--color-text)' : 'var(--color-text-muted)',
-              borderLeft: '1px solid var(--color-border-light)', paddingLeft: 5,
+              fontSize: 12, fontWeight: winner ? 800 : 600, minWidth: 18, textAlign: 'center',
+              color: winner ? 'var(--color-text)' : 'var(--color-text-secondary)',
+              background: winner ? 'rgba(0,23,58,0.08)' : 'var(--color-bg)',
+              borderRadius: 4, padding: '1px 3px',
+              lineHeight: 1.4,
             }}>
               {(local ? match.local_result : match.visiting_result) ?? '-'}
             </span>
-          </>
+          </div>
         ) : (
           <input
             type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} value={score}
@@ -164,17 +198,16 @@ const BracketSlot = memo(function BracketSlot({
             disabled={!canPredict}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
+            onFocus={() => { if (canPredict) setIsEditing(true); }}
             style={{
               width: 28, height: 24, textAlign: 'center', fontSize: 12, fontWeight: 700,
-              border: `1.5px solid ${hasChanges ? 'var(--color-fifa-blue)' : canPredict ? 'var(--color-border)' : 'var(--color-border-light)'}`,
+              border: `1.5px solid ${hasChanges || isEditing ? 'var(--color-fifa-blue)' : canPredict ? 'var(--color-border)' : 'var(--color-border-light)'}`,
               borderRadius: 4, padding: 0,
               background: canPredict ? 'var(--color-card)' : 'var(--color-bg)',
               color: 'var(--color-text)',
               outline: 'none', opacity: canPredict ? 1 : 0.35,
               cursor: canPredict ? 'text' : 'not-allowed',
             }}
-            onFocus={(e) => { if (canPredict) e.target.style.borderColor = 'var(--color-fifa-blue)'; }}
-            onBlur={(e) => { if (canPredict) e.target.style.borderColor = hasChanges ? 'var(--color-fifa-blue)' : 'var(--color-border)'; }}
           />
         )}
       </div>
@@ -184,6 +217,7 @@ const BracketSlot = memo(function BracketSlot({
   const handleCardClick = (e: React.MouseEvent) => {
     const tag = (e.target as HTMLElement).tagName;
     if (tag === 'INPUT' || tag === 'BUTTON') return;
+    if (showActions) return; // don't open detail while editing
     setDetailOpen(true);
   };
 
@@ -192,17 +226,32 @@ const BracketSlot = memo(function BracketSlot({
   const timeStr = matchDate.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div style={{ position: 'relative', width: MATCH_W }}>
+    <div style={{
+      position: 'relative', width: MATCH_W,
+      zIndex: showActions ? 10 : 1,
+      ...(showActions ? { transform: 'scale(1.08)' } : {}),
+      transition: 'transform 0.2s ease',
+    }}>
       <div
         onClick={handleCardClick}
         style={{
-          background: 'var(--color-card)',
-          border: justSaved ? '1.5px solid var(--color-success)' : '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-sm)',
+          background: (justSaved || justUpdated) ? 'var(--color-success-bg)' : 'var(--color-card)',
+          border: (justSaved || justUpdated)
+            ? '1.5px solid var(--color-success)'
+            : showActions
+              ? '1.5px solid var(--color-fifa-blue)'
+              : '1px solid var(--color-border)',
+          borderRadius: showActions
+            ? 'var(--radius-sm) var(--radius-sm) 0 0'
+            : 'var(--radius-sm)',
           overflow: 'hidden',
-          boxShadow: justSaved ? '0 0 0 2px var(--color-success-bg)' : 'var(--shadow-sm)',
-          cursor: 'pointer',
-          transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+          boxShadow: (justSaved || justUpdated)
+            ? '0 0 0 2px var(--color-success-bg)'
+            : showActions
+              ? '0 2px 8px rgba(1,124,252,0.1)'
+              : 'var(--shadow-sm)',
+          cursor: showActions ? 'default' : 'pointer',
+          transition: 'background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease, border-radius 0.2s ease',
         }}
       >
         <div style={{
@@ -217,53 +266,87 @@ const BracketSlot = memo(function BracketSlot({
         }}>
           {dateStr} · {timeStr}
         </div>
-        <TeamRow local={true} />
-        <TeamRow local={false} />
+        {renderTeamRow(true)}
+        {renderTeamRow(false)}
       </div>
 
-      {/* Save button — full width below card */}
-      {canPredict && hasChanges && (
-        <button
-          onClick={save}
-          onMouseDown={(e) => e.stopPropagation()}
-          disabled={saving}
-          style={{
-            width: '100%', marginTop: 3,
-            padding: '4px 0', borderRadius: 4,
-            background: 'var(--color-fifa-blue)', color: '#fff',
-            border: 'none', cursor: 'pointer',
-            fontSize: 10, fontWeight: 700,
-            opacity: saving ? 0.5 : 1,
-            transition: 'opacity 0.15s ease',
-          }}
-        >
-          {saving ? 'Guardando...' : savedLs ? 'Actualizar' : 'Guardar'}
-        </button>
+      {/* Action bar — attached below card like an extension */}
+      {canPredict && showActions && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0,
+          marginTop: -1,
+          display: 'flex', gap: 4, padding: '5px 8px',
+          background: 'var(--color-card)',
+          borderLeft: '1.5px solid var(--color-fifa-blue)',
+          borderRight: '1.5px solid var(--color-fifa-blue)',
+          borderBottom: '1.5px solid var(--color-fifa-blue)',
+          borderRadius: '0 0 var(--radius-sm) var(--radius-sm)',
+          boxShadow: '0 4px 12px rgba(1,124,252,0.12)',
+          zIndex: 11,
+        }}>
+          <button
+            onClick={cancel}
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              flex: 1, padding: '3px 0', borderRadius: 4,
+              background: 'var(--color-bg)', color: 'var(--color-text-secondary)',
+              border: '1px solid var(--color-border)', cursor: 'pointer',
+              fontSize: 9, fontWeight: 600,
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={save}
+            onMouseDown={(e) => e.stopPropagation()}
+            disabled={saving || !hasChanges}
+            style={{
+              flex: 1, padding: '3px 0', borderRadius: 4,
+              background: hasChanges ? 'var(--color-fifa-blue)' : 'var(--color-border)',
+              color: '#fff',
+              border: 'none', cursor: hasChanges ? 'pointer' : 'not-allowed',
+              fontSize: 9, fontWeight: 700,
+              opacity: saving ? 0.5 : 1,
+            }}
+          >
+            {saving ? '...' : savedLs ? 'Actualizar' : 'Guardar'}
+          </button>
+        </div>
       )}
 
-      {/* Saved confirmation */}
-      {justSaved && !hasChanges && (
+      {/* Saved confirmation — absolute overlay below card */}
+      {justSaved && !hasChanges && !showActions && (
         <div style={{
-          marginTop: 3, textAlign: 'center',
+          position: 'absolute', top: '100%', left: 0, right: 0,
+          padding: '4px 8px', textAlign: 'center',
           fontSize: 9, color: 'var(--color-success)', fontWeight: 600,
+          background: 'var(--color-success-bg)',
+          borderRadius: '0 0 6px 6px',
+          border: '1px solid rgba(22,163,74,0.15)',
+          borderTop: 'none',
+          zIndex: 11,
         }}>
           Predicción guardada
         </div>
       )}
 
       {/* Points badge */}
-      {played && prediction && prediction.points > 0 && (
+      {played && (
         <div style={{
           position: 'absolute', top: -7, right: -5,
-          background: 'var(--color-success)', color: '#fff',
+          background: (prediction?.points ?? 0) > 0 ? 'var(--color-success)' : 'var(--color-text-muted)',
+          color: '#fff',
           fontSize: 9, fontWeight: 700, padding: '1px 5px',
           borderRadius: 99, border: '1.5px solid #fff',
         }}>
-          +{prediction.points}
+          +{prediction?.points ?? 0}
         </div>
       )}
 
-      {detailOpen && <MatchDetailModal match={match} prediction={prediction} onClose={() => setDetailOpen(false)} />}
+      {detailOpen && createPortal(
+        <MatchDetailModal match={match} prediction={prediction} onClose={() => setDetailOpen(false)} />,
+        document.body,
+      )}
     </div>
   );
 });
@@ -334,6 +417,323 @@ function RoundCol({
   );
 }
 
+// ─── Mobile Bracket Slot ────────────────────────────────────────────────────
+
+const MobileBracketSlot = memo(function MobileBracketSlot({
+  match, prediction, onPredictionUpdate, highlighted = false,
+}: { match: Match; prediction?: UserMatch; onPredictionUpdate: () => void; highlighted?: boolean }) {
+  const { user } = useAuth();
+  const savedLs = prediction?.local_score?.toString() ?? '';
+  const savedVs = prediction?.visitor_score?.toString() ?? '';
+  const [ls, setLs] = useState(savedLs);
+  const [vs, setVs] = useState(savedVs);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [justUpdated, setJustUpdated] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const prevData = useRef({
+    lr: match.local_result, vr: match.visiting_result, hp: match.has_played,
+    pls: prediction?.local_score, pvs: prediction?.visitor_score,
+  });
+
+  useEffect(() => { setLs(savedLs); setVs(savedVs); }, [savedLs, savedVs]);
+
+  // Detect external updates (websocket): match results OR prediction changes
+  useEffect(() => {
+    const prev = prevData.current;
+    const matchChanged = prev.lr !== match.local_result || prev.vr !== match.visiting_result || prev.hp !== match.has_played;
+    const predChanged = prev.pls !== prediction?.local_score || prev.pvs !== prediction?.visitor_score;
+    prevData.current = {
+      lr: match.local_result, vr: match.visiting_result, hp: match.has_played,
+      pls: prediction?.local_score, pvs: prediction?.visitor_score,
+    };
+    if ((matchChanged || predChanged) && !saving) {
+      setJustUpdated(true);
+      setTimeout(() => setJustUpdated(false), 4000);
+    }
+  }, [match.local_result, match.visiting_result, match.has_played, prediction?.local_score, prediction?.visitor_score, saving]);
+
+  const played = match.has_played;
+  const isPast = new Date() >= new Date(match.match_date);
+  const isLocked = played || isPast;
+  const canPredict = !isLocked;
+  const hasChanges = ls !== '' && vs !== '' && (ls !== savedLs || vs !== savedVs);
+  const showActions = isEditing || hasChanges;
+
+  const save = async () => {
+    if (!user || !hasChanges || isLocked) return;
+    setSaving(true);
+    try {
+      await updatePredictionApi(user.id, match.id, parseInt(ls), parseInt(vs));
+      toast.success('Predicción actualizada');
+      setJustSaved(true);
+      setIsEditing(false);
+      setTimeout(() => setJustSaved(false), 10000);
+      onPredictionUpdate();
+    } catch { toast.error('Error al guardar'); }
+    finally { setSaving(false); }
+  };
+
+  const cancel = () => {
+    setLs(savedLs);
+    setVs(savedVs);
+    setIsEditing(false);
+  };
+
+  const lCode = getCountryCode(match.local_team_id);
+  const vCode = getCountryCode(match.visiting_team_id);
+  const lWins = played && (match.local_result ?? -1) > (match.visiting_result ?? -1);
+  const vWins = played && (match.visiting_result ?? -1) > (match.local_result ?? -1);
+
+  const matchDate = new Date(match.match_date);
+  const dateStr = matchDate.toLocaleDateString('es', { day: 'numeric', month: 'short' });
+  const timeStr = matchDate.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'BUTTON') return;
+    if (showActions) return;
+    setDetailOpen(true);
+  };
+
+  const renderMobileTeamRow = (local: boolean) => {
+    const teamId = local ? match.local_team_id : match.visiting_team_id;
+    const code = local ? lCode : vCode;
+    const winner = local ? lWins : vWins;
+    const score = local ? ls : vs;
+    const setScore = local ? setLs : setVs;
+    const predScore = local ? savedLs : savedVs;
+
+    return (
+      <div key={local ? 'local' : 'visitor'} style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 12px',
+        borderBottom: local ? '1px solid var(--color-border-light)' : 'none',
+        background: winner ? 'rgba(1,124,252,0.04)' : 'transparent',
+        minHeight: 40,
+      }}>
+        {code
+          ? <span className={`fi fis fi-${code}`} style={{ width: 22, height: 16, borderRadius: 3, flexShrink: 0, boxShadow: '0 0 0 1px rgba(0,0,0,0.08)' }} />
+          : <span style={{ width: 22, height: 16, borderRadius: 3, background: 'var(--color-border)', flexShrink: 0, display: 'inline-block' }} />
+        }
+        <span style={{
+          flex: 1, fontSize: 13,
+          fontWeight: winner ? 700 : 500,
+          color: winner ? 'var(--color-text)' : 'var(--color-text-secondary)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {local
+            ? (match.local_team?.name || teamId || 'TBD')
+            : (match.visiting_team?.name || teamId || 'TBD')}
+        </span>
+        {played ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{
+              fontSize: 12, fontWeight: 700, minWidth: 22, textAlign: 'center',
+              color: 'var(--color-fifa-blue)',
+              background: 'var(--color-fifa-blue-light)',
+              borderRadius: 5, padding: '2px 5px',
+              lineHeight: 1.4,
+            }}>
+              {predScore || '-'}
+            </span>
+            <span style={{
+              fontSize: 14, fontWeight: winner ? 800 : 600, minWidth: 24, textAlign: 'center',
+              color: winner ? 'var(--color-text)' : 'var(--color-text-secondary)',
+              background: winner ? 'rgba(0,23,58,0.08)' : 'var(--color-bg)',
+              borderRadius: 5, padding: '2px 5px',
+              lineHeight: 1.4,
+            }}>
+              {(local ? match.local_result : match.visiting_result) ?? '-'}
+            </span>
+          </div>
+        ) : (
+          <input
+            type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} value={score}
+            onChange={(e) => { setScore(e.target.value.replace(/\D/g, '').slice(0, 2)); setJustSaved(false); }}
+            disabled={!canPredict}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onFocus={() => { if (canPredict) setIsEditing(true); }}
+            style={{
+              width: 34, height: 28, textAlign: 'center', fontSize: 14, fontWeight: 700,
+              border: `1.5px solid ${hasChanges || isEditing ? 'var(--color-fifa-blue)' : canPredict ? 'var(--color-border)' : 'var(--color-border-light)'}`,
+              borderRadius: 6, padding: 0,
+              background: canPredict ? 'var(--color-card)' : 'var(--color-bg)',
+              color: 'var(--color-text)',
+              outline: 'none', opacity: canPredict ? 1 : 0.35,
+              cursor: canPredict ? 'text' : 'not-allowed',
+            }}
+          />
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{
+      position: 'relative',
+      zIndex: showActions ? 10 : 1,
+      ...(showActions ? { transform: 'scale(1.03)' } : {}),
+      transition: 'transform 0.2s ease',
+    }}>
+      <div
+        onClick={handleCardClick}
+        style={{
+          background: (justSaved || justUpdated)
+            ? 'var(--color-success-bg)'
+            : highlighted
+              ? 'var(--color-fifa-blue-light)'
+              : 'var(--color-card)',
+          border: (justSaved || justUpdated)
+            ? '1.5px solid var(--color-success)'
+            : highlighted
+              ? '1.5px solid var(--color-fifa-blue)'
+              : showActions
+                ? '1.5px solid var(--color-fifa-blue)'
+                : '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-sm)',
+          overflow: 'hidden',
+          boxShadow: (justSaved || justUpdated)
+            ? '0 0 0 2px var(--color-success-bg)'
+            : highlighted
+              ? '0 0 0 2px var(--color-fifa-blue-light)'
+              : showActions
+                ? '0 6px 20px rgba(1,124,252,0.16)'
+                : 'var(--shadow-sm)',
+          cursor: showActions ? 'default' : 'pointer',
+          transition: 'background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease',
+        }}
+      >
+        {/* Date header */}
+        <div style={{
+          padding: '4px 12px',
+          fontSize: 10,
+          color: 'var(--color-text-muted)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          borderBottom: '1px solid var(--color-border-light)',
+          background: 'var(--color-bg)',
+          fontWeight: 600,
+          letterSpacing: '0.02em',
+        }}>
+          <span>{dateStr} · {timeStr}</span>
+          {!showActions && <FiChevronRight size={12} style={{ color: 'var(--color-text-muted)' }} />}
+        </div>
+
+        {renderMobileTeamRow(true)}
+        {renderMobileTeamRow(false)}
+
+        {/* Action bar inside card */}
+        {canPredict && showActions && (
+          <div style={{
+            display: 'flex', gap: 8, padding: '8px 12px',
+            borderTop: '1px solid var(--color-border-light)',
+            background: 'var(--color-bg)',
+          }}>
+            <button
+              onClick={cancel}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                flex: 1, padding: '6px 0', borderRadius: 6,
+                background: 'transparent', color: 'var(--color-text-secondary)',
+                border: '1px solid var(--color-border)', cursor: 'pointer',
+                fontSize: 12, fontWeight: 600,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={save}
+              onMouseDown={(e) => e.stopPropagation()}
+              disabled={saving || !hasChanges}
+              style={{
+                flex: 1, padding: '6px 0', borderRadius: 6,
+                background: hasChanges ? 'var(--color-fifa-blue)' : 'var(--color-border)',
+                color: '#fff',
+                border: 'none', cursor: hasChanges ? 'pointer' : 'not-allowed',
+                fontSize: 12, fontWeight: 700,
+                opacity: saving ? 0.5 : 1,
+              }}
+            >
+              {saving ? 'Guardando...' : savedLs ? 'Actualizar' : 'Guardar'}
+            </button>
+          </div>
+        )}
+
+        {/* Saved confirmation inside card */}
+        {justSaved && !hasChanges && !showActions && (
+          <div style={{
+            padding: '5px 12px', textAlign: 'center',
+            fontSize: 11, color: 'var(--color-success)', fontWeight: 600,
+            borderTop: '1px solid var(--color-border-light)',
+            background: 'var(--color-success-bg)',
+          }}>
+            Predicción guardada
+          </div>
+        )}
+      </div>
+
+      {/* Points badge */}
+      {played && (
+        <div style={{
+          position: 'absolute', top: -6, right: -4,
+          background: (prediction?.points ?? 0) > 0 ? 'var(--color-success)' : 'var(--color-text-muted)',
+          color: '#fff',
+          fontSize: 10, fontWeight: 700, padding: '1px 6px',
+          borderRadius: 99, border: '1.5px solid #fff',
+        }}>
+          +{prediction?.points ?? 0}
+        </div>
+      )}
+
+      {detailOpen && createPortal(
+        <MatchDetailModal match={match} prediction={prediction} onClose={() => setDetailOpen(false)} />,
+        document.body,
+      )}
+    </div>
+  );
+});
+
+// ─── Mobile Bracket Pair Connector ──────────────────────────────────────────
+
+function BracketPairConnector({ cardCount }: { cardCount: number }) {
+  const cardH = 97; // approximate height of each MobileBracketSlot card
+  const gap = 6;
+  const totalH = cardCount * cardH + (cardCount - 1) * gap;
+  const midY = totalH / 2;
+  const connW = 14;
+
+  const d: string[] = [];
+  for (let i = 0; i < cardCount; i++) {
+    const y = i * (cardH + gap) + cardH / 2;
+    d.push(`M${connW - 4} ${y} H${connW}`);
+  }
+  // Vertical line connecting all ticks
+  const firstY = cardH / 2;
+  const lastY = (cardCount - 1) * (cardH + gap) + cardH / 2;
+  d.push(`M${connW - 4} ${firstY} V${lastY}`);
+  // Arrow to the right from midpoint
+  d.push(`M${connW - 4} ${midY} H2`);
+
+  return (
+    <svg
+      width={connW}
+      height={totalH}
+      style={{ flexShrink: 0 }}
+    >
+      <path
+        d={d.join(' ')}
+        stroke="var(--color-border)"
+        strokeWidth={1.5}
+        fill="none"
+        strokeLinecap="round"
+      />
+      <circle cx={2} cy={midY} r={2.5} fill="var(--color-fifa-blue)" />
+    </svg>
+  );
+}
+
 // ─── Phases ──────────────────────────────────────────────────────────────────
 const KNOCKOUT_PHASES: MatchPhase[] = ['round_of_32', 'round_of_16', 'quarter', 'semi', 'third_place', 'final'];
 const PHASE_SHORT: Record<string, string> = {
@@ -343,6 +743,20 @@ const PHASE_SHORT: Record<string, string> = {
 const COL_LABEL: Partial<Record<MatchPhase, string>> = {
   round_of_32: 'Dieciseisavos', round_of_16: 'Octavos', quarter: 'Cuartos',
   semi: 'Semifinal', final: 'Final', third_place: '3er Puesto',
+};
+
+// Bracket progression order for mobile navigation arrows
+const PHASE_FLOW: MatchPhase[] = ['round_of_32', 'round_of_16', 'quarter', 'semi', 'final'];
+const getPrevPhase = (p: MatchPhase): MatchPhase | null => {
+  // 3rd place is a standalone match, not part of the bracket flow
+  if (p === 'third_place') return null;
+  const i = PHASE_FLOW.indexOf(p);
+  return i > 0 ? PHASE_FLOW[i - 1] : null;
+};
+const getNextPhase = (p: MatchPhase): MatchPhase | null => {
+  if (p === 'third_place') return null;
+  const i = PHASE_FLOW.indexOf(p);
+  return i >= 0 && i < PHASE_FLOW.length - 1 ? PHASE_FLOW[i + 1] : null;
 };
 
 // Phases ordered from center outward (what to collapse first when space is tight)
@@ -358,11 +772,38 @@ const COLLAPSE_PRIORITY: { side: 'left' | 'right'; phase: MatchPhase }[] = [
 export default function BracketView({ predictions, onPredictionUpdate }: Props) {
   const [selectedPhase, setSelectedPhase] = useState<MatchPhase>('round_of_32');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [highlightMatches, setHighlightMatches] = useState<Set<number>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const matchRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const isDragging = useRef(false);
   const startX = useRef(0);
   const scrollLeftRef = useRef(0);
   const hasDragged = useRef(false);
+
+  const navigateToMatch = useCallback((targetPhase: MatchPhase, fromMatchIdx: number, direction: 'prev' | 'next') => {
+    let targets: number[];
+    if (direction === 'next') {
+      // 2 matches converge into 1: match 0,1 → 0; match 2,3 → 1
+      targets = [Math.floor(fromMatchIdx / 2)];
+    } else {
+      // 1 match expands to 2: match 0 → 0,1; match 1 → 2,3
+      targets = [fromMatchIdx * 2, fromMatchIdx * 2 + 1];
+    }
+
+    setSelectedPhase(targetPhase);
+    setHighlightMatches(new Set(targets));
+
+    // Scroll to the first highlighted match after render
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const el = matchRefs.current.get(targets[0]);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+    });
+
+    // Clear highlight after animation
+    setTimeout(() => setHighlightMatches(new Set()), 2200);
+  }, []);
 
   const { data: matches = [] } = useQuery({
     queryKey: ['matches'],
@@ -527,9 +968,10 @@ export default function BracketView({ predictions, onPredictionUpdate }: Props) 
         </div>
       </div>
 
-      {/* ── Mobile/Tablet: tabbed phases ── */}
+      {/* ── Mobile/Tablet: bracket-style tabbed phases ── */}
       <div className="xl:hidden">
-        <div className="flex overflow-x-auto" style={{ borderBottom: '2px solid var(--color-border-light)', marginBottom: 20, scrollbarWidth: 'none' }}>
+        {/* Phase tabs */}
+        <div className="flex overflow-x-auto" style={{ borderBottom: '2px solid var(--color-border-light)', marginBottom: 16, scrollbarWidth: 'none' }}>
           {KNOCKOUT_PHASES.map((phase) => {
             const active = selectedPhase === phase;
             if (!byPhase(phase).length) return null;
@@ -543,8 +985,6 @@ export default function BracketView({ predictions, onPredictionUpdate }: Props) 
                   borderBottom: active ? '2px solid var(--color-fifa-blue)' : '2px solid transparent',
                   marginBottom: -2, whiteSpace: 'nowrap', transition: 'color 0.15s ease',
                 }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = 'var(--color-text)'; }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = active ? 'var(--color-fifa-blue)' : 'var(--color-text-secondary)'; }}
               >
                 {PHASE_SHORT[phase]}
               </button>
@@ -552,31 +992,168 @@ export default function BracketView({ predictions, onPredictionUpdate }: Props) 
           })}
         </div>
 
-        <div className="flex items-center" style={{ gap: 10, marginBottom: 14 }}>
-          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{mobileMatches.length} partidos</span>
-          {(() => {
-            const p = mobileMatches.filter((m) => m.has_played).length;
-            const n = mobileMatches.length - p;
-            return (
-              <>
-                {n > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 99, background: 'rgba(230,81,0,0.1)', color: '#E65100' }}>{n} pendientes</span>}
-                {p > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 99, background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>{p} jugados</span>}
-              </>
-            );
-          })()}
+        {/* Phase header with stats */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 16, padding: '0 2px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              fontSize: 15, fontWeight: 700, color: 'var(--color-text)',
+              letterSpacing: '-0.01em',
+            }}>
+              {COL_LABEL[selectedPhase]}
+            </span>
+            <span style={{
+              fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 500,
+            }}>
+              {mobileMatches.length} partidos
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(() => {
+              const p = mobileMatches.filter((m) => m.has_played).length;
+              const n = mobileMatches.length - p;
+              return (
+                <>
+                  {n > 0 && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'rgba(230,81,0,0.08)', color: '#E65100' }}>{n} pend.</span>}
+                  {p > 0 && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>{p} jugados</span>}
+                </>
+              );
+            })()}
+          </div>
         </div>
 
         {mobileMatches.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13, background: 'var(--color-card)', border: '1px solid var(--color-border-light)', borderRadius: 'var(--radius-md)' }}>
+          <div style={{
+            padding: 40, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13,
+            background: 'var(--color-card)', border: '1px solid var(--color-border-light)',
+            borderRadius: 'var(--radius-md)',
+          }}>
             No hay partidos en esta fase
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2" style={{ gap: 12 }}>
-            {mobileMatches.map((m) => (
-              <div key={m.id} style={{ background: 'var(--color-card)', border: '1px solid var(--color-border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-                <MatchRow match={m} prediction={predictions.find((p) => p.match_id === m.id)} onPredictionUpdate={onPredictionUpdate} />
-              </div>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {(() => {
+              // Group matches in pairs for bracket visualization
+              const pairSize = selectedPhase === 'final' || selectedPhase === 'third_place' ? 1 : 2;
+              const pairs: Match[][] = [];
+              for (let i = 0; i < mobileMatches.length; i += pairSize) {
+                pairs.push(mobileMatches.slice(i, i + pairSize));
+              }
+
+              const prevPhase = getPrevPhase(selectedPhase);
+              const nextPhase = getNextPhase(selectedPhase);
+              const hasPrev = prevPhase && byPhase(prevPhase).length > 0;
+              const hasNext = nextPhase && byPhase(nextPhase).length > 0;
+
+              // Clear refs for this render
+              matchRefs.current.clear();
+
+              // Global match index counter across all pairs
+              let globalMatchIdx = 0;
+
+              return pairs.map((pair, pairIdx) => (
+                <div key={pairIdx}>
+                  {/* Pair label */}
+                  {pairSize > 1 && (
+                    <div style={{
+                      fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                      letterSpacing: '0.08em', color: 'var(--color-text-muted)',
+                      marginBottom: 6, paddingLeft: 2,
+                    }}>
+                      Llave {pairIdx + 1}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
+                    {/* Bracket connector */}
+                    {pair.length > 1 && (
+                      <div style={{
+                        display: 'flex', alignItems: 'center',
+                        flexShrink: 0, width: 16, position: 'relative',
+                      }}>
+                        <BracketPairConnector cardCount={pair.length} />
+                      </div>
+                    )}
+
+                    {/* Match cards with per-match arrows */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+                      {pair.map((m) => {
+                        const matchIdx = globalMatchIdx++;
+                        const isHL = highlightMatches.has(matchIdx);
+
+                        return (
+                          <div
+                            key={m.id}
+                            style={{ display: 'flex', alignItems: 'center', gap: 0 }}
+                          >
+                            {/* ← Previous phase */}
+                            {hasPrev ? (
+                              <button
+                                onClick={() => navigateToMatch(prevPhase, matchIdx, 'prev')}
+                                style={{
+                                  width: 26, height: 26, flexShrink: 0,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  background: 'var(--color-card)',
+                                  border: '1px solid var(--color-border)',
+                                  borderRadius: '50%',
+                                  cursor: 'pointer',
+                                  color: 'var(--color-text-secondary)',
+                                  marginRight: 4,
+                                  boxShadow: 'var(--shadow-sm)',
+                                }}
+                                title={`Ver ${PHASE_SHORT[prevPhase]}`}
+                              >
+                                <FiChevronLeft size={13} />
+                              </button>
+                            ) : (
+                              <div style={{ width: 0, flexShrink: 0 }} />
+                            )}
+
+                            {/* Card */}
+                            <div
+                              ref={(el) => { if (el) matchRefs.current.set(matchIdx, el); }}
+                              style={{ flex: 1, minWidth: 0 }}
+                            >
+                              <MobileBracketSlot
+                                match={m}
+                                prediction={predictions.find((p) => p.match_id === m.id)}
+                                onPredictionUpdate={onPredictionUpdate}
+                                highlighted={isHL}
+                              />
+                            </div>
+
+                            {/* → Next phase */}
+                            {hasNext ? (
+                              <button
+                                onClick={() => navigateToMatch(nextPhase, matchIdx, 'next')}
+                                style={{
+                                  width: 26, height: 26, flexShrink: 0,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  background: 'var(--color-card)',
+                                  border: '1px solid var(--color-border)',
+                                  borderRadius: '50%',
+                                  cursor: 'pointer',
+                                  color: 'var(--color-text-secondary)',
+                                  marginLeft: 4,
+                                  boxShadow: 'var(--shadow-sm)',
+                                }}
+                                title={`Ver ${PHASE_SHORT[nextPhase]}`}
+                              >
+                                <FiChevronRight size={13} />
+                              </button>
+                            ) : (
+                              <div style={{ width: 0, flexShrink: 0 }} />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         )}
       </div>

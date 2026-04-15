@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { toast } from 'sonner';
 import { FiChevronRight } from 'react-icons/fi';
 import type { Match, UserMatch } from '../../types';
@@ -48,9 +48,29 @@ function MatchRow({ match, prediction, onPredictionUpdate }: Props) {
   const [visitorScore, setVisitorScore] = useState(savedVs);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [justUpdated, setJustUpdated] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const prevData = useRef({
+    lr: match.local_result, vr: match.visiting_result, hp: match.has_played,
+    pls: prediction?.local_score, pvs: prediction?.visitor_score,
+  });
 
   useEffect(() => { setLocalScore(savedLs); setVisitorScore(savedVs); }, [savedLs, savedVs]);
+
+  // Detect external updates (websocket)
+  useEffect(() => {
+    const prev = prevData.current;
+    const matchChanged = prev.lr !== match.local_result || prev.vr !== match.visiting_result || prev.hp !== match.has_played;
+    const predChanged = prev.pls !== prediction?.local_score || prev.pvs !== prediction?.visitor_score;
+    prevData.current = {
+      lr: match.local_result, vr: match.visiting_result, hp: match.has_played,
+      pls: prediction?.local_score, pvs: prediction?.visitor_score,
+    };
+    if ((matchChanged || predChanged) && !saving) {
+      setJustUpdated(true);
+      setTimeout(() => setJustUpdated(false), 4000);
+    }
+  }, [match.local_result, match.visiting_result, match.has_played, prediction?.local_score, prediction?.visitor_score, saving]);
 
   const state = getMatchState(match);
   const isLocked = state !== 'forecast';
@@ -104,15 +124,15 @@ function MatchRow({ match, prediction, onPredictionUpdate }: Props) {
         style={{
           padding: '10px 12px 10px 16px',
           borderBottom: '1px solid var(--color-border-light)',
-          transition: 'background 0.5s ease',
-          background: justSaved && !hasChanges ? 'var(--color-success-bg)' : 'transparent',
-          borderLeft: justSaved && !hasChanges
+          transition: 'background 0.5s ease, border-color 0.4s ease',
+          background: (justUpdated || (justSaved && !hasChanges)) ? 'var(--color-success-bg)' : 'transparent',
+          borderLeft: (justUpdated || (justSaved && !hasChanges))
             ? '3px solid var(--color-success)'
             : `3px solid ${stateColor}`,
           cursor: 'pointer',
         }}
-        onMouseEnter={(e) => { if (!justSaved) e.currentTarget.style.background = 'var(--color-bg)'; }}
-        onMouseLeave={(e) => { if (!justSaved) e.currentTarget.style.background = 'transparent'; }}
+        onMouseEnter={(e) => { if (!justSaved && !justUpdated) e.currentTarget.style.background = 'var(--color-bg)'; }}
+        onMouseLeave={(e) => { if (!justSaved && !justUpdated) e.currentTarget.style.background = justUpdated ? 'var(--color-success-bg)' : 'transparent'; }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
 
@@ -260,13 +280,13 @@ function MatchRow({ match, prediction, onPredictionUpdate }: Props) {
 
           {/* Points + chevron */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-            {finished && prediction && (
+            {finished && (
               <span style={{
                 fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 99,
-                color: prediction.points > 0 ? 'var(--color-success)' : 'var(--color-text-muted)',
-                background: prediction.points > 0 ? 'var(--color-success-bg)' : 'var(--color-bg)',
+                color: (prediction?.points ?? 0) > 0 ? 'var(--color-success)' : 'var(--color-text-muted)',
+                background: (prediction?.points ?? 0) > 0 ? 'var(--color-success-bg)' : 'var(--color-bg)',
               }}>
-                +{prediction.points}
+                +{prediction?.points ?? 0}
               </span>
             )}
             <FiChevronRight size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />

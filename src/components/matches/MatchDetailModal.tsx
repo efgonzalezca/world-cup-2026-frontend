@@ -265,36 +265,50 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                 </div>
               </div>
 
-              {played && prediction && (
+              {played && (
                 <div style={{ marginTop: 12 }}>
-                  <button
-                    onClick={() => setShowBreakdown(!showBreakdown)}
-                    style={{
-                      width: '100%',
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 14px', borderRadius: 10,
-                      background: prediction.points > 0 ? 'rgba(45,226,177,0.12)' : cardBg,
-                      border: `1px solid ${prediction.points > 0 ? 'rgba(45,226,177,0.3)' : border}`,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span style={{
-                      fontSize: 13, fontWeight: 700,
-                      color: prediction.points > 0 ? 'var(--color-fifa-teal)' : textSecondary,
-                    }}>
-                      En este partido sumé: {prediction.points} puntos
-                    </span>
+                  {prediction ? (
+                    <>
+                      <button
+                        onClick={() => setShowBreakdown(!showBreakdown)}
+                        style={{
+                          width: '100%',
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '10px 14px', borderRadius: 10,
+                          background: prediction.points > 0 ? 'rgba(45,226,177,0.12)' : cardBg,
+                          border: `1px solid ${prediction.points > 0 ? 'rgba(45,226,177,0.3)' : border}`,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <span style={{
+                          fontSize: 13, fontWeight: 700,
+                          color: prediction.points > 0 ? 'var(--color-fifa-teal)' : textSecondary,
+                        }}>
+                          En este partido sumé: {prediction.points} puntos
+                        </span>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          fontSize: 11, fontWeight: 600,
+                          color: textSecondary,
+                        }}>
+                          Detalle de mis puntos
+                          {showBreakdown ? <FiChevronUp size={12} /> : <FiChevronDown size={12} />}
+                        </div>
+                      </button>
+                      {showBreakdown && prediction.discriminated_points && (
+                        <PointsBreakdown points={prediction.discriminated_points} />
+                      )}
+                    </>
+                  ) : (
                     <div style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      fontSize: 11, fontWeight: 600,
-                      color: textSecondary,
+                      padding: '10px 14px', borderRadius: 10,
+                      background: cardBg,
+                      border: `1px solid ${border}`,
                     }}>
-                      Detalle de mis puntos
-                      {showBreakdown ? <FiChevronUp size={12} /> : <FiChevronDown size={12} />}
+                      <span style={{ fontSize: 13, fontWeight: 700, color: textSecondary }}>
+                        No registraste predicción · +0 puntos
+                      </span>
                     </div>
-                  </button>
-                  {showBreakdown && prediction.discriminated_points && (
-                    <PointsBreakdown points={prediction.discriminated_points} />
                   )}
                 </div>
               )}

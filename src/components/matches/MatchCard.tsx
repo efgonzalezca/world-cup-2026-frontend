@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { toast } from 'sonner';
 import { FiUsers } from 'react-icons/fi';
 import type { Match, UserMatch } from '../../types';
@@ -43,9 +43,29 @@ function MatchCard({ match, prediction, onPredictionUpdate }: Props) {
   const [vs, setVs] = useState(savedVs);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [justUpdated, setJustUpdated] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const prevData = useRef({
+    lr: match.local_result, vr: match.visiting_result, hp: match.has_played,
+    pls: prediction?.local_score, pvs: prediction?.visitor_score,
+  });
 
   useEffect(() => { setLs(savedLs); setVs(savedVs); }, [savedLs, savedVs]);
+
+  // Detect external updates (websocket)
+  useEffect(() => {
+    const prev = prevData.current;
+    const matchChanged = prev.lr !== match.local_result || prev.vr !== match.visiting_result || prev.hp !== match.has_played;
+    const predChanged = prev.pls !== prediction?.local_score || prev.pvs !== prediction?.visitor_score;
+    prevData.current = {
+      lr: match.local_result, vr: match.visiting_result, hp: match.has_played,
+      pls: prediction?.local_score, pvs: prediction?.visitor_score,
+    };
+    if ((matchChanged || predChanged) && !saving) {
+      setJustUpdated(true);
+      setTimeout(() => setJustUpdated(false), 4000);
+    }
+  }, [match.local_result, match.visiting_result, match.has_played, prediction?.local_score, prediction?.visitor_score, saving]);
 
   const state = getMatchState(match);
   const cfg = STATE_CONFIG[state];
@@ -74,12 +94,13 @@ function MatchCard({ match, prediction, onPredictionUpdate }: Props) {
   return (
     <>
       <div style={{
-        background: 'var(--color-card)',
+        background: justUpdated ? 'var(--color-success-bg)' : 'var(--color-card)',
         borderRadius: 14,
-        border: '1px solid var(--color-border)',
-        boxShadow: 'var(--shadow-md)',
+        border: justUpdated ? '1.5px solid var(--color-success)' : '1px solid var(--color-border)',
+        boxShadow: justUpdated ? '0 0 0 2px var(--color-success-bg)' : 'var(--shadow-md)',
         overflow: 'hidden',
         display: 'flex', flexDirection: 'column',
+        transition: 'background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease',
       }}>
 
         {/* ═══ HEADER: date + state badge ═══ */}
@@ -273,16 +294,16 @@ function MatchCard({ match, prediction, onPredictionUpdate }: Props) {
           )}
 
           {/* Points pill — finished state */}
-          {state === 'finished' && prediction && (
+          {state === 'finished' && (
             <div style={{ marginTop: 12, display: 'flex', justifyContent: 'center' }}>
               <span style={{
                 fontSize: 12, fontWeight: 700,
                 padding: '5px 14px', borderRadius: 99,
-                color: prediction.points > 0 ? 'var(--color-success)' : 'var(--color-text-muted)',
-                background: prediction.points > 0 ? 'var(--color-success-bg)' : 'var(--color-card)',
-                border: `1px solid ${prediction.points > 0 ? 'rgba(22,163,74,0.2)' : 'var(--color-border)'}`,
+                color: (prediction?.points ?? 0) > 0 ? 'var(--color-success)' : 'var(--color-text-muted)',
+                background: (prediction?.points ?? 0) > 0 ? 'var(--color-success-bg)' : 'var(--color-card)',
+                border: `1px solid ${(prediction?.points ?? 0) > 0 ? 'rgba(22,163,74,0.2)' : 'var(--color-border)'}`,
               }}>
-                +{prediction.points} puntos
+                +{prediction?.points ?? 0} puntos
               </span>
             </div>
           )}
