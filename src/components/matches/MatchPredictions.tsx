@@ -24,7 +24,7 @@ export default function MatchPredictions({ matchId, onClose }: Props) {
           <p style={{ color: 'var(--color-text-muted)' }}>Cargando...</p>
         ) : (
           <div className="space-y-2">
-            {predictions?.map((p) => (
+            {predictions?.data?.map((p) => (
               <div key={p.id} className="flex justify-between items-center p-3 rounded-lg" style={{ background: 'var(--color-bg)' }}>
                 <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{p.user?.nickname}</span>
                 <div className="flex items-center gap-3">

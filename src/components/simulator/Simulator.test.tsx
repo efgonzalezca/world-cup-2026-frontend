@@ -6,7 +6,7 @@ vi.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ user: { id: '1', nickname: 'test' }, token: 'tk' }),
 }));
 
-function fillAllInputs() {
+function _fillAllInputs() {
   const inputs = screen.getAllByRole('spinbutton');
   fireEvent.change(inputs[0], { target: { value: '2' } });
   fireEvent.change(inputs[1], { target: { value: '1' } });

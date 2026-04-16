@@ -35,7 +35,7 @@ export function getCountryCode(teamId: string | null): string | null {
   return TEAM_TO_ISO[teamId] || null;
 }
 
-export function getFlagClass(teamId: string | null, size: 'sm' | 'md' | 'lg' = 'md'): string {
+export function getFlagClass(teamId: string | null, _size: 'sm' | 'md' | 'lg' = 'md'): string {
   const code = getCountryCode(teamId);
   if (!code) return '';
   return `fi fis fi-${code}`;
