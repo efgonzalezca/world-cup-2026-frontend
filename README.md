@@ -179,14 +179,16 @@ npm run preview
 ### Variables de Entorno
 
 ```env
-# URL base del backend REST API (sin trailing slash)
-VITE_API_URL=http://localhost:3000
+# URL base del backend REST API (incluye el prefijo /api, sin trailing slash)
+VITE_API_URL=http://localhost:3000/api
 
-# URL del servidor WebSocket (mismo que backend)
+# URL del servidor WebSocket (mismo host que backend, sin /api)
 VITE_WS_URL=ws://localhost:3000
 ```
 
-Si no se configuran, el frontend usa automaticamente el hostname del navegador con puerto 3000 (funciona en localhost y LAN sin cambiar nada).
+Si no se configuran, el frontend usa automaticamente el hostname del navegador con puerto 3000 y prefijo `/api` (funciona en localhost y LAN sin cambiar nada).
+
+> **Nota:** El backend expone todos sus endpoints bajo el prefijo `/api` (incluyendo `/api/uploads` para avatares). `VITE_API_URL` debe apuntar a `http(s)://host:puerto/api`.
 
 ## Tests
 
