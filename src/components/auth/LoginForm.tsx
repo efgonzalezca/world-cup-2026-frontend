@@ -37,14 +37,32 @@ export default function LoginForm() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const reason = params.get('reason');
-    if (reason === 'password_changed') {
-      // Clean URL without reload
-      window.history.replaceState({}, '', '/login');
-      const timer = setTimeout(() => {
-        toast.info('Tu sesión fue cerrada porque la contraseña fue cambiada desde otro dispositivo.', { duration: 8000 });
-      }, 500);
-      return () => clearTimeout(timer);
-    }
+    if (!reason) return;
+
+    const reasonToast: Record<string, { kind: 'info' | 'warning' | 'error'; message: string }> = {
+      password_changed: {
+        kind: 'info',
+        message: 'Tu sesión fue cerrada porque la contraseña fue cambiada desde otro dispositivo.',
+      },
+      account_deactivated: {
+        kind: 'warning',
+        message: 'Tu sesión fue cerrada porque tu cuenta fue desactivada. Contacta al administrador.',
+      },
+      account_deleted: {
+        kind: 'error',
+        message: 'Tu sesión fue cerrada porque tu cuenta fue eliminada.',
+      },
+      session_revoked: {
+        kind: 'warning',
+        message: 'Hubo un problema con tu sesión. Por favor, inicia sesión nuevamente.',
+      },
+    };
+
+    const entry = reasonToast[reason] ?? reasonToast.session_revoked;
+    const showToast = entry.kind === 'error' ? toast.error : entry.kind === 'warning' ? toast.warning : toast.info;
+    showToast(entry.message, { duration: 8000 });
+
+    window.history.replaceState({}, '', '/login');
   }, []);
 
   const validate = (e: string, p: string) => {
