@@ -114,3 +114,29 @@ export interface PaginatedRanking extends PaginatedResponse<RankingEntry> {
 }
 
 export type PaginatedMatchPredictions = PaginatedResponse<UserMatch>;
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  nickname: string;
+  role: 'admin' | 'user';
+  names: string;
+  surnames: string;
+  cellphone: string;
+  score: number;
+  podium_score: number;
+  total_score: number;
+  profile_image: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export type PaginatedAdminUsers = PaginatedResponse<AdminUser>;
+
+export interface AdminUsersParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: 'active' | 'inactive' | 'all';
+  role?: 'admin' | 'user';
+}

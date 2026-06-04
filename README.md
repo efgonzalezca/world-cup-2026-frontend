@@ -25,14 +25,15 @@ src/
 ├── api/               # Clientes HTTP (Axios)
 │   ├── client.ts      # Configuracion base (interceptores JWT, manejo 401)
 │   ├── auth.ts        # Login
-│   ├── users.ts       # Ranking, predicciones, avatar, perfil
+│   ├── users.ts       # Ranking, predicciones, avatar, perfil, gestion admin de usuarios
 │   ├── matches.ts     # Partidos y resultados
 │   ├── teams.ts       # Equipos y grupos
 │   └── config.ts      # Configuracion (deadline podio)
 ├── components/
-│   ├── admin/         # Panel de administracion (registrar resultados)
+│   ├── admin/         # Panel admin con tabs: AdminPanel (contenedor),
+│   │                  #   AdminMatches (resultados), AdminUsers (gestion de usuarios)
 │   ├── auth/          # Login, registro, recuperar contrasena
-│   ├── common/        # ErrorBoundary, Spinner y componentes compartidos
+│   ├── common/        # ErrorBoundary, Spinner, ConfirmDialog y componentes compartidos
 │   ├── layout/        # Header, ProfileModal, Layout
 │   ├── matches/       # MatchCard, MatchRow, GroupMatches, BracketView, MatchDetailModal
 │   ├── podium/        # PodiumSelector (prediccion de campeon, sub, 3ro)
@@ -101,8 +102,11 @@ src/
 
 ### Panel Admin (`/admin`)
 - Solo para usuarios con rol `admin`
-- Registrar resultados de partidos
-- Recalculo automatico de puntos
+- Organizado en dos tabs: **Resultados** y **Usuarios**
+- **Resultados**: registrar resultados de partidos con recalculo automatico de puntos
+- **Usuarios**: listado paginado con busqueda (debounced) y filtros por estado/rol;
+  activar/desactivar cuentas con dialogo de confirmacion. Al desactivar se cierra la
+  sesion activa del usuario. El admin no puede cambiar su propio estado
 
 ## Tiempo Real (WebSocket)
 
@@ -111,7 +115,7 @@ La aplicacion mantiene una unica conexion WebSocket global autenticada con JWT (
 - **Predicciones**: Se actualizan al guardar (otros participantes ven cambios)
 - **Resultados**: Ranking y puntos se recalculan instantaneamente
 - **Perfil**: Avatares se actualizan en toda la app
-- **Seguridad**: Force logout al cambiar contrasena, conexion autenticada con JWT
+- **Seguridad**: Force logout al cambiar contrasena o al desactivar la cuenta (motivo `account_disabled`), conexion autenticada con JWT
 - **Reconexion**: Automatica con hasta 10 intentos (1-5s de delay)
 
 ## Manejo de Errores

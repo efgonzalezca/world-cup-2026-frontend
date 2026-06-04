@@ -48,6 +48,10 @@ export default function LoginForm() {
         kind: 'warning',
         message: 'Tu sesión fue cerrada porque tu cuenta fue desactivada. Contacta al administrador.',
       },
+      account_disabled: {
+        kind: 'warning',
+        message: 'Tu cuenta fue desactivada por un administrador.',
+      },
       account_deleted: {
         kind: 'error',
         message: 'Tu sesión fue cerrada porque tu cuenta fue eliminada.',

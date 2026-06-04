@@ -1,5 +1,11 @@
 import client from './client';
-import type { PaginatedRanking, PaginatedMatchPredictions } from '../types';
+import type {
+  PaginatedRanking,
+  PaginatedMatchPredictions,
+  PaginatedAdminUsers,
+  AdminUser,
+  AdminUsersParams,
+} from '../types';
 
 export const getRankingApi = (page = 1, limit = 20) =>
   client.get<PaginatedRanking>('/users', { params: { page, limit } });
@@ -19,3 +25,12 @@ export const updatePredictionApi = (
   local_score: number,
   visitor_score: number,
 ) => client.patch(`/users/${userId}/matches/${matchId}`, { local_score, visitor_score });
+
+export const getAdminUsersApi = (params: AdminUsersParams = {}) =>
+  client.get<PaginatedAdminUsers>('/users/admin', { params });
+
+export const getAdminUserApi = (id: string) =>
+  client.get<AdminUser>(`/users/admin/${id}`);
+
+export const setUserActiveApi = (id: string, isActive: boolean) =>
+  client.patch<AdminUser>(`/users/admin/${id}/status`, { is_active: isActive });
