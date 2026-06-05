@@ -6,3 +6,8 @@ export const getMatchesApi = (phase?: string) =>
 
 export const updateMatchResultApi = (matchId: string, local_result: number, visiting_result: number) =>
   client.patch<Match>(`/matches/${matchId}`, { local_result, visiting_result });
+
+export const assignMatchTeamsApi = (
+  matchId: string,
+  payload: { local_team_id?: string | null; visiting_team_id?: string | null },
+) => client.patch<Match>(`/matches/${matchId}/teams`, payload);

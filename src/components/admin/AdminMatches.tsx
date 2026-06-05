@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { getMatchesApi, updateMatchResultApi } from '../../api/matches';
+import { getMatchesApi, updateMatchResultApi, assignMatchTeamsApi } from '../../api/matches';
 import { getGroupsApi } from '../../api/teams';
+import { useSocket } from '../../hooks/useSocket';
 import { PHASE_LABELS } from '../../utils/scoring';
 import { getCountryCode } from '../../utils/flags';
-import type { Match } from '../../types';
+import { computePhaseCandidates } from '../../utils/bracket';
+import TeamSelect from './TeamSelect';
+import type { Match, MatchPhase } from '../../types';
 
 const PHASES = Object.keys(PHASE_LABELS);
 
@@ -16,7 +19,7 @@ function Flag({ teamId, size = 26 }: { teamId: string | null; size?: number }) {
   return <span className={`fi fis fi-${code}`} style={{ width: size, height: h, borderRadius: 3, flexShrink: 0, boxShadow: '0 0 0 1px rgba(0,0,0,0.08)' }} />;
 }
 
-function AdminMatchRow({ match, onSave }: { match: Match; onSave: () => void }) {
+function AdminMatchRow({ match, onSave, eliminated, candidates }: { match: Match; onSave: () => void; eliminated?: Set<string>; candidates?: Set<string> | null }) {
   const [local, setLocal] = useState('');
   const [visiting, setVisiting] = useState('');
   const [saving, setSaving] = useState(false);
@@ -24,6 +27,38 @@ function AdminMatchRow({ match, onSave }: { match: Match; onSave: () => void }) 
 
   const played = match.has_played;
   const hasInputs = local !== '' && visiting !== '';
+
+  const isKnockout = match.phase !== 'group';
+  const missingTeams = !match.local_team_id || !match.visiting_team_id;
+  const canEditTeams = isKnockout && !played;
+
+  const [editingTeams, setEditingTeams] = useState(canEditTeams && missingTeams);
+  const [localTeam, setLocalTeam] = useState<string | null>(match.local_team_id);
+  const [visitingTeam, setVisitingTeam] = useState<string | null>(match.visiting_team_id);
+  const [savingTeams, setSavingTeams] = useState(false);
+
+  const teamsChanged = localTeam !== match.local_team_id || visitingTeam !== match.visiting_team_id;
+
+  const handleSaveTeams = async () => {
+    if (!teamsChanged) return;
+    setSavingTeams(true);
+    try {
+      await assignMatchTeamsApi(match.id, { local_team_id: localTeam, visiting_team_id: visitingTeam });
+      toast.success('Equipos asignados');
+      setEditingTeams(false);
+      onSave();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al asignar equipos');
+    } finally {
+      setSavingTeams(false);
+    }
+  };
+
+  const cancelEditTeams = () => {
+    setLocalTeam(match.local_team_id);
+    setVisitingTeam(match.visiting_team_id);
+    setEditingTeams(false);
+  };
 
   const handleSubmit = async () => {
     if (!hasInputs) return;
@@ -95,7 +130,50 @@ function AdminMatchRow({ match, onSave }: { match: Match; onSave: () => void }) 
           )}
         </div>
 
-        {/* Matchup */}
+        {/* Team assignment editor (knockout, not played) */}
+        {editingTeams ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minWidth: 0 }}>
+            <TeamSelect value={localTeam} onChange={setLocalTeam} excludeTeamId={visitingTeam} eliminated={eliminated} candidates={candidates} disabled={savingTeams} />
+            <span style={{
+              flexShrink: 0, display: 'inline-block', width: 22, height: 22, lineHeight: '22px',
+              borderRadius: '50%', background: 'var(--color-primary)',
+              color: 'var(--color-fifa-teal)', fontSize: 7, fontWeight: 800, textAlign: 'center',
+            }}>VS</span>
+            <TeamSelect value={visitingTeam} onChange={setVisitingTeam} excludeTeamId={localTeam} eliminated={eliminated} candidates={candidates} disabled={savingTeams} />
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button
+                onClick={handleSaveTeams}
+                disabled={!teamsChanged || savingTeams}
+                title="Guardar equipos"
+                style={{
+                  width: 24, height: 24, borderRadius: 6,
+                  background: 'var(--color-fifa-blue)', color: '#fff', border: 'none',
+                  cursor: !teamsChanged || savingTeams ? 'default' : 'pointer',
+                  fontSize: 12, fontWeight: 700, lineHeight: 1,
+                  opacity: !teamsChanged || savingTeams ? 0.5 : 1,
+                }}
+              >
+                {savingTeams ? '·' : '✓'}
+              </button>
+              {!missingTeams && (
+                <button
+                  onClick={cancelEditTeams}
+                  disabled={savingTeams}
+                  title="Cancelar"
+                  style={{
+                    width: 24, height: 24, borderRadius: 6,
+                    background: 'var(--color-card)', color: 'var(--color-text-secondary)',
+                    border: '1.5px solid var(--color-border)', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 700, lineHeight: 1,
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+        /* Matchup */
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, minWidth: 0 }}>
           <span className="hidden sm:inline" style={{
             fontSize: 12, fontWeight: 600, color: 'var(--color-text)',
@@ -174,16 +252,32 @@ function AdminMatchRow({ match, onSave }: { match: Match; onSave: () => void }) 
             {match.visiting_team_id || 'TBD'}
           </span>
         </div>
+        )}
 
-        {/* Status badge */}
+        {/* Status badge / edit teams */}
         <div style={{ flexShrink: 0, width: 52, textAlign: 'right' }}>
-          {played && (
+          {played ? (
             <span style={{
               fontSize: 9, fontWeight: 600, padding: '2px 7px',
               borderRadius: 99, background: 'var(--color-success-bg)', color: 'var(--color-success)',
             }}>
               Jugado
             </span>
+          ) : (
+            canEditTeams && !editingTeams && !missingTeams && (
+              <button
+                onClick={() => setEditingTeams(true)}
+                title="Editar equipos"
+                style={{
+                  width: 24, height: 24, borderRadius: 6,
+                  background: 'var(--color-card)', color: 'var(--color-text-secondary)',
+                  border: '1.5px solid var(--color-border)', cursor: 'pointer',
+                  fontSize: 12, lineHeight: 1,
+                }}
+              >
+                ✎
+              </button>
+            )
           )}
         </div>
       </div>
@@ -205,6 +299,17 @@ export default function AdminMatches() {
   const { data: groups } = useQuery({
     queryKey: ['groups'],
     queryFn: () => getGroupsApi().then((r) => r.data),
+  });
+
+  const { data: allMatches } = useQuery({
+    queryKey: ['matches', 'all'],
+    queryFn: () => getMatchesApi().then((r) => r.data),
+  });
+
+  const { candidates, eliminated } = computePhaseCandidates(allMatches || [], selectedPhase as MatchPhase);
+
+  useSocket({
+    'match.teams.updated': () => queryClient.invalidateQueries({ queryKey: ['matches'] }),
   });
 
   const handleSaved = () => queryClient.invalidateQueries({ queryKey: ['matches'] });
@@ -337,7 +442,7 @@ export default function AdminMatches() {
               boxShadow: 'var(--shadow-sm)',
               overflow: 'hidden',
             }}>
-              <AdminMatchRow match={match} onSave={handleSaved} />
+              <AdminMatchRow match={match} onSave={handleSaved} eliminated={eliminated} candidates={candidates} />
             </div>
           ))}
         </div>
