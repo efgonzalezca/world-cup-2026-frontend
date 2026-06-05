@@ -25,6 +25,9 @@ export default function MatchesPage() {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       refetch();
     },
+    'match.teams.updated': () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
   });
 
   const tabs = [
