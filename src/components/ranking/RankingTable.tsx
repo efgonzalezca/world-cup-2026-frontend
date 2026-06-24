@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { FiTrendingUp, FiCheckCircle, FiActivity } from 'react-icons/fi';
 import { resolveAvatar } from '../../utils/avatar';
 import type { PaginatedRanking, RankingEntry } from '../../types';
+import UserResultsModal from './UserResultsModal';
 
 type TournamentState = 'upcoming' | 'live' | 'in_progress' | 'finished';
 
@@ -54,14 +55,16 @@ const MAX_PAGES_IN_MEMORY = 10;
 const WS_DEBOUNCE_MS = 500;
 const LOAD_COOLDOWN_MS = 800;
 
-const RankingRow = memo(function RankingRow({ entry, index, isCurrentUser }: {
-  entry: RankingEntry; index: number; isCurrentUser: boolean;
+const RankingRow = memo(function RankingRow({ entry, index, isCurrentUser, onClick }: {
+  entry: RankingEntry; index: number; isCurrentUser: boolean; onClick: () => void;
 }) {
   return (
     <div
       className="flex items-center"
+      onClick={onClick}
       style={{
         padding: '10px 16px',
+        cursor: 'pointer',
         background: isCurrentUser
           ? 'rgba(1,124,252,0.08)'
           : index < 3
@@ -124,6 +127,7 @@ export default function RankingTable() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [tick, setTick] = useState(0);
+  const [selectedEntry, setSelectedEntry] = useState<RankingEntry | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const stickyBarVisible = useRef(false);
@@ -503,7 +507,12 @@ export default function RankingTable() {
                 borderBottom: index < ranking.length - 1 ? '1px solid var(--color-border-light)' : 'none',
               }}
             >
-              <RankingRow entry={entry} index={index} isCurrentUser={isCurrentUser} />
+              <RankingRow
+                entry={entry}
+                index={index}
+                isCurrentUser={isCurrentUser}
+                onClick={() => setSelectedEntry(entry)}
+              />
             </div>
           );
         })}
@@ -564,6 +573,10 @@ export default function RankingTable() {
           }
         }
       `}</style>
+
+      {selectedEntry && (
+        <UserResultsModal entry={selectedEntry} onClose={() => setSelectedEntry(null)} />
+      )}
     </div>
   );
 }
