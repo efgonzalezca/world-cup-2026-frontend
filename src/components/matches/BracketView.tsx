@@ -810,7 +810,18 @@ export default function BracketView({ predictions, onPredictionUpdate }: Props) 
     queryFn: () => getMatchesApi().then((r) => r.data),
   });
 
-  const byPhase = useCallback((phase: MatchPhase) => matches.filter((m) => m.phase === phase), [matches]);
+  const byPhase = useCallback(
+    (phase: MatchPhase) =>
+      matches
+        .filter((m) => m.phase === phase)
+        .sort((a, b) => {
+          const an = a.match_number ?? Infinity;
+          const bn = b.match_number ?? Infinity;
+          if (an !== bn) return an - bn;
+          return new Date(a.match_date).getTime() - new Date(b.match_date).getTime();
+        }),
+    [matches],
+  );
   const leftOf = (phase: MatchPhase) => { const a = byPhase(phase); return a.slice(0, Math.ceil(a.length / 2)); };
   const rightOf = (phase: MatchPhase) => { const a = byPhase(phase); return a.slice(Math.ceil(a.length / 2)); };
 
@@ -878,10 +889,7 @@ export default function BracketView({ predictions, onPredictionUpdate }: Props) 
   const finalMatch = byPhase('final')[0];
   const thirdMatch = byPhase('third_place')[0];
 
-  // Mobile
-  const mobileMatches = byPhase(selectedPhase).sort(
-    (a, b) => new Date(a.match_date).getTime() - new Date(b.match_date).getTime()
-  );
+  const mobileMatches = byPhase(selectedPhase);
 
   const isCollapsed = (side: string, phase: string) => !!collapsed[`${side}_${phase}`];
 

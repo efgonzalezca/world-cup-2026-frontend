@@ -33,6 +33,7 @@ export interface TournamentGroup {
 export interface Match {
   id: string;
   phase: MatchPhase;
+  match_number: number | null;
   group_code: string | null;
   match_date: string;
   local_team_id: string | null;
