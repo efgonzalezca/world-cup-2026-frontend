@@ -5,6 +5,7 @@ import type {
   PaginatedAdminUsers,
   AdminUser,
   AdminUsersParams,
+  UserResultsResponse
 } from '../types';
 
 export const getRankingApi = (page = 1, limit = 20) =>
@@ -18,6 +19,9 @@ export const updateUserApi = (userId: string, data: Record<string, unknown>) =>
 
 export const uploadAvatarApi = (userId: string, base64Image: string) =>
   client.post(`/users/${userId}/avatar`, { image: base64Image });
+
+export const getUserMatchResultsApi = (userId: string) =>
+  client.get<UserResultsResponse>(`/users/${userId}/matches/results`);
 
 export const updatePredictionApi = (
   userId: string,

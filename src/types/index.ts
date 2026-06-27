@@ -107,6 +107,7 @@ export interface PaginatedResponse<T> {
   page: number;
   limit: number;
   totalPages?: number;
+  predictions_visible?: boolean;
 }
 
 export interface PaginatedRanking extends PaginatedResponse<RankingEntry> {
@@ -139,4 +140,29 @@ export interface AdminUsersParams {
   search?: string;
   status?: 'active' | 'inactive' | 'all';
   role?: 'admin' | 'user';
+}
+export interface UserResultMatchInfo {
+  match_date: string;
+  phase: MatchPhase;
+  group_code: string | null;
+  has_played: boolean;
+  local_result: number | null;
+  visiting_result: number | null;
+  local_team: { id: string; name: string } | null;
+  visiting_team: { id: string; name: string } | null;
+}
+
+export interface UserResultEntry {
+  id: string;
+  match_id: string;
+  local_score: number | null;
+  visitor_score: number | null;
+  points: number;
+  discriminated_points: DiscriminatedPoints | null;
+  match: UserResultMatchInfo;
+}
+
+export interface UserResultsResponse {
+  user: { id: string; nickname: string };
+  data: UserResultEntry[];
 }

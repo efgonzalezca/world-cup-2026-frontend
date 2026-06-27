@@ -85,9 +85,11 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
     initialPageParam: 1,
   });
 
+  const predictionVisible = data?.pages[0]?.predictions_visible ?? false;
+
   const allPredictions = useMemo(
-    () => data?.pages.flatMap((p) => p.data) || [],
-    [data],
+    () => predictionVisible ? data?.pages.flatMap((p) => p.data) ?? [] : [],
+    [data, predictionVisible],
   );
 
   const otherPredictions = useMemo(
@@ -416,7 +418,10 @@ export default function MatchDetailModal({ match, prediction, onClose }: Props) 
                     })
                   ) : (
                     <div style={{ padding: 24, textAlign: 'center', color: textSecondary, fontSize: 13 }}>
-                      No hay participantes activos
+                      { predictionVisible ? 
+                        'No hay participantes activos' 
+                          : 
+                        'Las predicciones de los participantes estaran disponibles una vez que el partido haya iniciado' }
                     </div>
                   )}
 
